@@ -1,0 +1,20 @@
+{
+  "name": "claude-hub",
+  "version": "0.1.0",
+  "description": "Dashboard quản lý nhiều phiên Claude Code theo dự án / nhánh / worktree",
+  "bin": {
+    "claude-hub": "bin/claude-hub.js"
+  },
+  "scripts": {
+    "start": "node bin/claude-hub.js",
+    "test": "node --test"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.18",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "ws": "^8.22.1"
+  }
+}

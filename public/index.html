@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Hub</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23d97757'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/style.css">
+  <script>window.HUB_TOKEN = '__HUB_TOKEN__';</script>
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" id="home" title="Tổng quan">Claude Hub</button>
+    <div class="counts" id="counts"></div>
+    <div class="spacer"></div>
+    <span class="conn" id="conn">đang kết nối…</span>
+    <button id="enable-notify" class="btn ghost" hidden>🔔 Bật thông báo</button>
+    <button id="add-project" class="btn">+ Thêm dự án</button>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="tree"></nav>
+    <main class="main">
+      <section id="overview" class="overview"></section>
+      <section id="worktree-view" class="panel" hidden></section>
+      <section id="session-view" class="session-view" hidden>
+        <div class="session-head">
+          <div class="crumbs" id="session-crumbs"></div>
+          <div class="actions">
+            <button class="btn ghost" data-act="files">File đã sửa</button>
+            <button class="btn ghost" data-act="lazygit">lazygit</button>
+            <button class="btn ghost" data-act="explorer">Thư mục</button>
+            <button class="btn ghost" data-act="kill">Dừng</button>
+            <button class="btn ghost danger" data-act="remove">Đóng phiên</button>
+          </div>
+        </div>
+        <div class="session-body">
+          <div class="terminals" id="terminals"></div>
+          <aside class="files" id="files" hidden></aside>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="diff-modal" id="diff-modal" hidden>
+    <div class="diff-box">
+      <div class="diff-head"><span id="diff-title"></span><button class="btn ghost" id="diff-close">Đóng</button></div>
+      <pre id="diff-body"></pre>
+    </div>
+  </div>
+  <script src="/vendor/xterm.js"></script>
+  <script src="/vendor/addon-fit.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
