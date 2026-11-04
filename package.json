@@ -9,6 +9,13 @@
     "start": "node bin/claude-hub.js",
     "test": "node --test"
   },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hoanglanse04/claude-hub.git"
+  },
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {

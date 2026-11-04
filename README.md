@@ -1,93 +1,136 @@
-# claude-hub
+# Claude Hub
 
+Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code** cùng lúc, sắp theo dự án, nhánh git và worktree. Mỗi phiên là một terminal thật nhúng trong trình duyệt; hub cho biết phiên nào đang chạy, phiên nào đang chờ bạn trả lời, phiên nào đã xong, và báo bằng âm thanh hoặc thông báo của hệ điều hành.
 
+## Tính năng
 
-## Getting started
+- **Nhiều phiên Claude song song**, nhóm theo dự án → nhánh/worktree. Trạng thái từng phiên (sẵn sàng, đang chạy, chờ bạn, xong, đã thoát) cập nhật trực tiếp qua hook của Claude Code.
+- **Trang tổng quan**: phiên cần bạn xử lý luôn nằm đầu, kèm câu hỏi Claude đang chờ.
+- **Lịch sử phiên**: liệt kê các phiên Claude Code đã lưu của từng thư mục (cả phiên mở ngoài hub) và **mở lại** bằng `claude --resume`.
+- **MCP theo từng phiên**: xem các MCP server phiên đang dùng, kiểm tra kết nối, bật/tắt từng MCP. Đổi MCP sẽ khởi động lại phiên và giữ nguyên cuộc trò chuyện.
+- **Terminal popup**: mở PowerShell, cmd hoặc Git Bash ngay tại thư mục của nhánh/phiên; nhiều tab, kéo thả, đổi kích thước, thu nhỏ.
+- **Git**: tạo worktree/nhánh mới, xem file đã sửa và diff từng file, mở lazygit hoặc thư mục.
+- **Đặt tên** cho dự án, thư mục worktree và phiên; tự phân biệt hai thư mục trùng tên (ví dụ hai bản clone của cùng một repo).
+- **Cài đặt giao diện**: bộ màu có sẵn, tự chọn màu, độ vát góc, cỡ chữ, font terminal, CSS tùy chỉnh; xuất/nhập cấu hình.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Yêu cầu
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+| Thành phần | Ghi chú |
+|---|---|
+| [Node.js](https://nodejs.org) **18 trở lên** | Kiểm tra bằng `node -v` |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Đã đăng nhập. Hub tìm `~/.local/bin/claude(.exe)` trước, sau đó tới `claude` trong `PATH` |
+| Git | Để đọc nhánh, worktree và file đã sửa |
+| [lazygit](https://github.com/jesseduffield/lazygit) | Không bắt buộc, chỉ dùng cho nút "lazygit" |
 
-## Add your files
+Hub dùng tốt nhất trên **Windows**. Phiên Claude và terminal popup chạy được trên macOS/Linux; riêng các nút "Thư mục" (mở Explorer) và "lazygit" hiện chỉ viết cho Windows.
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+Không cần cài trình biên dịch C++: thư viện terminal `@lydell/node-pty` có sẵn bản dựng cho Windows, macOS và Linux.
+
+## Cài đặt
+
+```bash
+git clone https://github.com/hoanglanse04/claude-hub.git
+cd claude-hub
+npm ci
+```
+
+Chạy thử:
+
+```bash
+npm start
+```
+
+Muốn có lệnh `claude-hub` dùng ở mọi nơi:
+
+```bash
+npm install -g .
+claude-hub
+```
+
+Hub mở dashboard tại <http://127.0.0.1:4317/>. Trên Windows có Microsoft Edge, dashboard mở thành cửa sổ riêng (chế độ app); máy khác mở bằng trình duyệt mặc định.
+
+> **Giữ cửa sổ dòng lệnh của hub mở.** Đóng nó (hoặc Ctrl+C) sẽ dừng mọi phiên Claude và terminal đang chạy trong hub. Chạy `claude-hub` lần nữa khi hub đã chạy chỉ mở lại cửa sổ dashboard.
+
+### Tùy chọn dòng lệnh
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/hoanglanse04/claude-hub.git
-git branch -M main
-git push -uf origin main
+claude-hub [--port 4317] [--no-open]
 ```
 
-## Integrate with your tools
+| Tùy chọn | Ý nghĩa |
+|---|---|
+| `--port <số>` | Đổi cổng (mặc định `4317`) |
+| `--no-open` | Không tự mở cửa sổ dashboard |
+| `--help` | Xem hướng dẫn ngắn |
 
-* [Set up project integrations](https://gitlab.com/hoanglanse04/claude-hub/-/settings/integrations)
+## Bắt đầu sử dụng
 
-## Collaborate with your team
+1. Bấm **Thêm dự án** và nhập đường dẫn một repo git, hoặc một thư mục chứa nhiều repo (hub quét sâu 2 cấp).
+2. Ở sidebar, chọn một nhánh rồi bấm **▶** (hoặc **Phiên Claude mới** trong trang của nhánh).
+3. Gõ yêu cầu trong terminal như dùng Claude Code bình thường. Khi Claude cần bạn hoặc làm xong, hub đổi trạng thái, phát âm thanh và gửi thông báo (bấm **Bật thông báo** một lần để cho phép).
+4. Trang của nhánh có **Lịch sử phiên** để mở lại phiên cũ, nút **Terminal**, **lazygit** và danh sách **file đã sửa** (bấm vào để xem diff).
+5. Trên thanh của một phiên:
+   - **MCP**: xem và bật/tắt MCP server.
+   - **Terminal**: mở shell tại thư mục của phiên.
+   - **Đặt tên**: đặt tên cho phiên.
+   - **File đã sửa**, **Dừng**, **Đóng phiên**.
+6. **Cài đặt** (góc phải trên cùng) để đổi giao diện, shell mặc định của terminal popup và âm thanh báo.
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+## Dữ liệu được lưu ở đâu
 
-## Test and Deploy
+| Dữ liệu | Vị trí |
+|---|---|
+| Danh sách dự án, tên tùy đặt | `~/.claude-hub/config.json` |
+| Hook báo trạng thái (tự tạo mỗi lần chạy) | `~/.claude-hub/hook-settings.json` |
+| Cấu hình MCP riêng của từng phiên | `~/.claude-hub/mcp/<id>.json` (xóa khi đóng phiên) |
+| Cài đặt giao diện | `localStorage` của trình duyệt, theo từng cổng |
+| Lịch sử hội thoại | Do Claude Code tự lưu trong `~/.claude/projects/`; hub chỉ đọc |
 
-Use the built-in continuous integration in GitLab.
+Danh sách phiên đang mở và tên phiên chỉ nằm trong bộ nhớ của hub, mất khi tắt hub. Các cuộc trò chuyện thì vẫn còn trong lịch sử và mở lại được.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+## Bảo mật
 
-***
+- Hub chỉ lắng nghe trên `127.0.0.1`, mỗi lần chạy sinh một token ngẫu nhiên; API và WebSocket từ chối request thiếu token hoặc đến từ origin khác.
+- Hub chỉ gắn hook vào những phiên do chính nó mở (qua `--settings`), không đụng vào cấu hình Claude Code chung.
+- Terminal popup chỉ chạy các shell có trong danh sách cho phép (PowerShell, pwsh, cmd, Git Bash; bash trên macOS/Linux).
+- File `~/.claude-hub/mcp/<id>.json` chép nguyên cấu hình MCP từ `~/.claude.json`, **kể cả token/mật khẩu** nếu có, giống file gốc. Trình duyệt không nhận được các giá trị này.
+- Shell và phiên Claude chạy với quyền của tài khoản đang dùng máy.
 
-# Editing this README
+## Biến môi trường (nâng cao)
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+| Biến | Ý nghĩa |
+|---|---|
+| `CLAUDE_HUB_PORT_LISTEN` | Cổng mặc định thay cho `4317` |
+| `CLAUDE_HUB_HOME` | Thư mục dữ liệu thay cho `~/.claude-hub` |
+| `CLAUDE_HUB_CLAUDE` | Đường dẫn tới lệnh `claude` |
+| `CLAUDE_HUB_CLAUDE_JSON` | File cấu hình Claude Code thay cho `~/.claude.json` (nguồn đọc MCP) |
+| `CLAUDE_HUB_HISTORY_ROOT` | Thư mục lịch sử thay cho `~/.claude/projects` |
 
-## Suggestions for a good README
+## Phát triển
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```bash
+npm test        # chạy toàn bộ test (node --test)
+```
 
-## Name
-Choose a self-explaining name for your project.
+Cấu trúc:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```
+bin/claude-hub.js   khởi động server, mở cửa sổ dashboard
+src/server.js       HTTP API + WebSocket, quét dự án định kỳ
+src/sessions.js     phiên Claude Code (node-pty), trạng thái, khởi động lại
+src/shells.js       terminal popup
+src/history.js      đọc lịch sử phiên trong ~/.claude/projects
+src/mcp.js          đọc cấu hình MCP, cấu hình riêng cho từng phiên, kiểm tra kết nối
+src/git.js          worktree, file đã sửa, diff
+src/config.js       danh sách dự án, tên tùy đặt
+src/status.js       chuyển trạng thái từ hook event
+hooks/report.js     hook Claude Code gửi sự kiện về hub
+public/             giao diện (HTML/CSS/JS thuần, không cần build)
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## Xử lý sự cố
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- **Phiên không đổi trạng thái**: kiểm tra hub còn chạy; hook gửi về `127.0.0.1:<cổng>` và tự bỏ qua nếu hub tắt. Phiên mở ngoài hub không có hook nên không hiện trạng thái.
+- **Không tìm thấy `claude`**: đặt `CLAUDE_HUB_CLAUDE` trỏ tới file chạy của Claude Code.
+- **Cổng 4317 đã bị dùng**: chạy `claude-hub --port 4400`.
+- **MCP báo "lỗi"** trong panel MCP: rê chuột vào để xem lý do; thường do cấu hình server trong `~/.claude.json` hoặc dịch vụ phía sau (ví dụ database) chưa chạy.
