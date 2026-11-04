@@ -22,6 +22,20 @@ test('server', async t => {
     assert.ok(html.includes(hub.token));
   });
 
+  await t.test('serves CodeMirror files but nothing outside its package', async () => {
+    assert.equal((await fetch(base + '/vendor/cm/lib/codemirror.js')).status, 200);
+    assert.equal((await fetch(base + '/vendor/cm/..%2F..%2Fpackage.json')).status, 404);
+  });
+
+  await t.test('editor API refuses files outside registered projects', async () => {
+    const outside = path.join(os.tmpdir(), `hub-outside-${process.pid}.txt`);
+    fs.writeFileSync(outside, 'secret');
+    const res = await fetch(base + '/api/fs/read?path=' + encodeURIComponent(outside), { headers });
+    assert.equal(res.status, 403);
+    assert.ok(!(await res.text()).includes('secret'));
+    fs.rmSync(outside, { force: true });
+  });
+
   await t.test('rejects API calls without the token', async () => {
     assert.equal((await fetch(base + '/api/state')).status, 401);
   });

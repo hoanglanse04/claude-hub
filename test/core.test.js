@@ -126,3 +126,25 @@ test('aliases are keyed by path regardless of case and cleared by an empty name'
   assert.equal(config.aliasOf(cfg, dir), '');
   assert.deepEqual(cfg.aliases, {});
 });
+
+test('a folder holding repos becomes a workspace; a repo or its subfolder does not', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-ws-'));
+  const config = require('../src/config');
+  for (const name of ['v1', 'v2']) execFileSync('git', ['init', '-q', path.join(root, name)]);
+  fs.mkdirSync(path.join(root, 'v1', 'src'));
+  fs.mkdirSync(path.join(root, 'empty'));
+  const cfg = { projects: [], workspaces: [] };
+
+  assert.equal(await config.addWorkspace(cfg, root), true);
+  assert.equal(await config.addWorkspace(cfg, root), false); // already there
+  assert.equal(await config.addWorkspace(cfg, path.join(root, 'v1')), false); // a repo
+  assert.equal(await config.addWorkspace(cfg, path.join(root, 'v1', 'src')), false); // inside a repo
+  assert.equal(await config.addWorkspace(cfg, path.join(root, 'empty')), false); // no repos below
+  assert.equal(cfg.workspaces.length, 1);
+
+  assert.ok(config.isInside(path.join(root, 'v2'), root));
+  assert.ok(!config.isInside(root, path.join(root, 'v2')));
+  config.removeWorkspace(cfg, root);
+  assert.deepEqual(cfg.workspaces, []);
+  fs.rmSync(root, { recursive: true, force: true });
+});

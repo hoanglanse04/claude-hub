@@ -18,6 +18,8 @@ const state = {
   mcpDraft: null, // { sid, names: Set } – unsaved checkbox state
   shells: [],
   shellKinds: [],
+  workspaces: [], // parent folders that hold several repos: [{ path, name, alias, missing }]
+  gitlog: new Map(), // worktree path -> { all, limit, filter, loading, error, data: { commits, width, more } }
 };
 const terms = new Map(); // session id -> { term, fit, el }
 let ws;
@@ -261,6 +263,36 @@ function projectLabel(p) {
   return p.alias || p.name;
 }
 
+function wsLabel(w) {
+  return w.alias || w.name;
+}
+
+function findWorkspace(path) {
+  return state.workspaces.find(w => norm(w.path) === norm(path)) || null;
+}
+
+const isInside = (child, dir) => norm(child) === norm(dir) || norm(child).startsWith(`${norm(dir)}\\`);
+
+// "dự án › nhánh" for a worktree, "Workspace X" for a parent folder, else the folder name
+function placeLabel(cwd) {
+  const found = findWorktree(cwd);
+  if (found) return `${projectLabel(found.project)} › ${wtLabel(found.wt)}`;
+  const w = findWorkspace(cwd);
+  return w ? `Workspace ${wsLabel(w)}` : basename(cwd);
+}
+
+function selectWorkspace(path) {
+  closeEditor();
+  state.selected = { kind: 'workspace', path };
+  render();
+  loadHistory(path);
+}
+
+async function removeWorkspace(w) {
+  if (!confirm(`Gỡ workspace "${wsLabel(w)}" khỏi dashboard? Các dự án con vẫn giữ nguyên, không xóa file nào.`)) return;
+  await api('DELETE', '/api/workspaces', { path: w.path });
+}
+
 const parentName = p => basename((p || '').replace(/[\\/][^\\/]+[\\/]?$/, ''));
 
 // Extra text that tells apart two folders with the same name (e.g. two clones of one repo).
@@ -321,6 +353,8 @@ function connect() {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'projects') {
       state.projects = msg.projects;
+      state.workspaces = msg.workspaces || [];
+      if (state.selected?.kind === 'workspace' && !findWorkspace(state.selected.path)) state.selected = null;
       render();
     } else if (msg.type === 'sessions') {
       state.sessions = msg.sessions;
@@ -461,7 +495,8 @@ function focusShell(id) {
 
 function shellTabLabel(s) {
   const found = findWorktree(s.cwd);
-  return `${found ? projectLabel(found.project) : basename(s.cwd)} · ${s.label}`;
+  const w = !found && findWorkspace(s.cwd);
+  return `${found ? projectLabel(found.project) : w ? wsLabel(w) : basename(s.cwd)} · ${s.label}`;
 }
 
 function renderShellPop() {
@@ -541,7 +576,7 @@ function notify(s) {
   beep(s.status);
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const found = findWorktree(s.cwd);
-  const where = found ? `${projectLabel(found.project)} › ${wtLabel(found.wt)}` : basename(s.cwd);
+  const where = placeLabel(s.cwd);
   const title = s.status === 'waiting' ? `⏳ Claude cần bạn — ${where}` : `✅ Claude đã xong — ${where}`;
   const n = new Notification(title, { body: s.lastMessage || s.title || '', tag: s.id, requireInteraction: s.status === 'waiting' });
   n.onclick = () => {
@@ -563,6 +598,7 @@ function setupNotifyButton() {
 
 // ---------- actions ----------
 function selectSession(id) {
+  closeEditor();
   state.selected = { kind: 'session', id };
   const s = state.sessions.find(x => x.id === id);
   if (s?.unread) api('POST', `/api/sessions/${id}/read`);
@@ -574,6 +610,7 @@ function selectSession(id) {
 }
 
 function selectWorktree(path) {
+  closeEditor();
   state.selected = { kind: 'worktree', path };
   render();
   loadHistory(path);
@@ -602,8 +639,11 @@ async function startSession(cwd, opts = {}) {
 async function addProject() {
   const path = prompt('Đường dẫn repo, hoặc thư mục chứa nhiều repo (ví dụ D:\\CPLUS):');
   if (!path) return;
-  const { added } = await api('POST', '/api/projects', { path: path.trim().replace(/^"|"$/g, '') });
-  alert(`Đã thêm ${added.length} dự án:\n${added.join('\n')}`);
+  const { added, workspace } = await api('POST', '/api/projects', { path: path.trim().replace(/^"|"$/g, '') });
+  const lines = [];
+  if (workspace) lines.push('Đã thêm workspace (mở được phiên Claude ở folder cha).');
+  if (added.length) lines.push(`Đã thêm ${added.length} dự án:\n${added.join('\n')}`);
+  alert(lines.join('\n\n'));
 }
 
 async function removeProject(p) {
@@ -618,25 +658,142 @@ async function addWorktree(p) {
   if (confirm(`Đã tạo worktree tại:\n${path}\n\nMở phiên Claude ở đó luôn?`)) await startSession(path);
 }
 
-async function showDiff(cwd, file) {
-  const { diff } = await api('GET', `/api/diff?cwd=${encodeURIComponent(cwd)}&file=${encodeURIComponent(file)}`);
-  document.getElementById('diff-title').textContent = file;
+function openDiffModal(title, text) {
+  document.getElementById('diff-title').textContent = title;
   const body = document.getElementById('diff-body');
-  body.replaceChildren(...(diff || '(không có thay đổi)').split('\n').map(line => {
+  // a commit starts with its message, where "- item" lines are text, not removed lines
+  let inDiff = !/^commit /.test(text || '');
+  body.replaceChildren(...(text || '(không có thay đổi)').split('\n').map(line => {
+    if (line.startsWith('diff ')) inDiff = true;
     let cls = '';
-    if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') || line.startsWith('index ')) cls = 'meta';
+    if (!inDiff) cls = /^(commit|Author:|Date:) /.test(line) ? 'head' : '';
+    else if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') || line.startsWith('index ')) cls = 'meta';
     else if (line.startsWith('+')) cls = 'add';
     else if (line.startsWith('-')) cls = 'del';
     else if (line.startsWith('@@')) cls = 'hunk';
     return h('span', { class: cls }, line);
   }));
+  body.scrollTop = 0;
+  diffFile = null;
+  document.getElementById('diff-edit').hidden = true;
   document.getElementById('diff-modal').hidden = false;
+}
+
+let diffFile = null; // { cwd, file } when the diff modal shows a working-tree file
+async function showDiff(cwd, file) {
+  const { diff } = await api('GET', `/api/diff?cwd=${encodeURIComponent(cwd)}&file=${encodeURIComponent(file)}`);
+  openDiffModal(file, diff);
+  diffFile = { cwd, file };
+  document.getElementById('diff-edit').hidden = false;
+}
+
+async function showCommit(cwd, c) {
+  const { text } = await api('GET', `/api/commit?cwd=${encodeURIComponent(cwd)}&hash=${c.hash}`);
+  openDiffModal(`${c.hash.slice(0, 8)} — ${c.subject}`, text);
+}
+
+// ---------- git commit graph ----------
+const LANE = 14;
+const ROW_H = 26;
+const GRAPH_COLORS = ['var(--accent)', '#13c2c2', '#eb2f96', '#52c41a', '#9254de', '#2f7cf6', '#ff7a45', '#a0d911'];
+const laneX = lane => 9 + lane * LANE;
+const graphColor = i => GRAPH_COLORS[i % GRAPH_COLORS.length];
+
+function svgEl(tag, attrs = {}, ...children) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  el.append(...children);
+  return el;
+}
+
+function graphCell(c, width) {
+  const svg = svgEl('svg', { class: 'gl-graph', width: laneX(width - 1) + 9, height: ROW_H });
+  for (const s of c.segments) {
+    const x1 = laneX(s.x1), y1 = s.y1 * ROW_H, x2 = laneX(s.x2), y2 = s.y2 * ROW_H;
+    const d = x1 === x2 ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`;
+    svg.append(svgEl('path', { d, style: `stroke:${graphColor(s.color)}` }));
+  }
+  const isHead = c.refs.some(r => r.kind === 'head');
+  const merge = c.parents.length > 1;
+  svg.append(svgEl('circle', {
+    cx: laneX(c.col), cy: ROW_H / 2, r: isHead ? 5 : 4,
+    class: `gl-dot${merge ? ' merge' : ''}${isHead ? ' head' : ''}`,
+    style: `stroke:${graphColor(c.color)};fill:${merge ? 'var(--bg)' : graphColor(c.color)}`,
+  }));
+  return svg;
+}
+
+async function loadGitLog(path, opts = {}) {
+  const prev = state.gitlog.get(norm(path)) || { all: false, limit: 200, filter: '' };
+  const next = { ...prev, ...opts, loading: true, error: null };
+  state.gitlog.set(norm(path), next);
+  render();
+  try {
+    const data = await api('GET', `/api/log?cwd=${encodeURIComponent(path)}&all=${next.all ? 1 : 0}&limit=${next.limit}`);
+    state.gitlog.set(norm(path), { ...state.gitlog.get(norm(path)), loading: false, data });
+  } catch (err) {
+    state.gitlog.set(norm(path), { ...state.gitlog.get(norm(path)), loading: false, error: err.message });
+  }
+  render();
+}
+
+function gitLogSection(path) {
+  const g = state.gitlog.get(norm(path));
+  if (!g) {
+    // first visit: mark as loading now, fetch after this render finishes
+    state.gitlog.set(norm(path), { all: false, limit: 200, filter: '', loading: true });
+    setTimeout(() => loadGitLog(path));
+    return [h('h3', {}, 'Lịch sử git'), h('p', { class: 'hint' }, 'Đang đọc git log…')];
+  }
+  const data = g.data;
+  const q = (g.filter || '').toLowerCase();
+  const commits = data?.commits || [];
+  const shown = q ? commits.filter(c => `${c.subject} ${c.author} ${c.hash} ${c.refs.map(r => r.name).join(' ')}`.toLowerCase().includes(q)) : commits;
+
+  const head = h('h3', {}, `Lịch sử git (${commits.length}${data?.more ? '+' : ''})`,
+    h('button', { class: 'btn small ghost', title: 'Đọc lại git log', onclick: () => loadGitLog(path) }, icon('resume'), g.loading ? 'đang tải…' : 'làm mới'));
+
+  const controls = h('div', { class: 'gl-controls' },
+    h('label', { class: 'gl-toggle' },
+      h('input', { type: 'checkbox', checked: g.all, onchange: e => loadGitLog(path, { all: e.target.checked }) }), 'Tất cả nhánh'),
+    h('input', {
+      class: 'history-filter gl-filter', type: 'search', placeholder: 'Lọc theo nội dung, tác giả, mã commit, nhánh…', value: g.filter || '',
+      oninput: e => {
+        state.gitlog.set(norm(path), { ...g, filter: e.target.value });
+        const pos = e.target.selectionStart;
+        render();
+        const el = document.querySelector('.gl-filter');
+        el?.focus();
+        el?.setSelectionRange(pos, pos);
+      },
+    }));
+
+  let body;
+  if (g.error) body = h('p', { class: 'hint' }, `Không đọc được git log: ${g.error}`);
+  else if (!data) body = h('p', { class: 'hint' }, 'Đang đọc git log…');
+  else if (!shown.length) body = h('p', { class: 'hint' }, q ? 'Không có commit nào khớp.' : 'Chưa có commit nào.');
+  else {
+    // the graph only makes sense for the full, unfiltered list
+    const withGraph = !q;
+    body = h('div', { class: 'gl-list' }, shown.map(c => h('div', { class: 'gl-row', onclick: () => showCommit(path, c), title: `${c.hash}\n${c.subject}` },
+      withGraph ? graphCell(c, data.width) : null,
+      c.refs.length ? h('span', { class: 'gl-refs' }, c.refs.map(r => h('span', { class: `gl-ref ${r.kind}` }, r.kind === 'tag' ? `🏷 ${r.name}` : r.name))) : null,
+      h('span', { class: 'gl-subject' }, c.subject),
+      h('span', { class: 'gl-author' }, c.author),
+      h('span', { class: 'gl-time' }, ago(c.time)),
+      h('code', { class: 'gl-hash' }, c.hash.slice(0, 7)))));
+  }
+  const more = data?.more && !q
+    ? h('button', { class: 'btn small', disabled: g.loading, onclick: () => loadGitLog(path, { limit: g.limit + 300 }) }, icon('download'), 'Tải thêm commit')
+    : null;
+  return [head, controls, body, more];
 }
 
 function fileList(cwd, changes) {
   if (!changes?.length) return h('p', { class: 'hint' }, 'Không có file nào thay đổi.');
   return h('ul', { class: 'file-list' }, changes.map(c =>
-    h('li', { onclick: () => showDiff(cwd, c.file), title: 'Xem diff' }, h('span', { class: `code ${c.code}` }, c.code), c.file)));
+    h('li', { onclick: () => showDiff(cwd, c.file), title: 'Xem diff' }, h('span', { class: `code ${c.code}` }, c.code), h('span', { class: 'fl-name' }, c.file),
+      c.code === 'D' ? null : h('button', { class: 'btn small ghost fl-edit', title: 'Mở trong editor', onclick: e => { e.stopPropagation(); openEditor(cwd, joinPath(cwd, c.file.replace(/\//g, '\\'))); } }, icon('edit')))));
 }
 
 // ---------- rendering ----------
@@ -668,11 +825,46 @@ function renderTree() {
   const nodes = [];
   const placed = new Set();
 
-  if (!state.projects.length) {
+  if (!state.projects.length && !state.workspaces.length) {
     nodes.push(h('div', { class: 'empty' }, 'Chưa có dự án nào.', h('br'), 'Bấm “+ Thêm dự án” và nhập đường dẫn repo, hoặc thư mục chứa nhiều repo.'));
   }
 
-  for (const p of state.projects) {
+  const nested = new Set();
+  for (const w of state.workspaces) {
+    const children = state.projects.filter(p => !nested.has(p) && isInside(p.path, w.path));
+    children.forEach(p => nested.add(p));
+    const list = sessionsIn(w.path);
+    list.forEach(s => placed.add(s.id));
+    const selected = sel?.kind === 'workspace' && norm(sel.path) === norm(w.path);
+    nodes.push(h('div', { class: 'workspace' },
+      h('div', { class: 'workspace-head', title: w.path },
+        icon('grid'),
+        h('span', { class: 'kicker' }, 'Workspace'),
+        h('span', { class: 'name' }, wsLabel(w), w.alias ? h('span', { class: 'name-hint' }, w.name) : null),
+        h('span', { class: 'tools' },
+          h('button', { class: 'btn small', title: 'Đặt tên workspace', onclick: () => renameFolder(w.path, w.alias, 'workspace') }, icon('edit')),
+          h('button', { class: 'btn small danger', title: 'Gỡ workspace (giữ các dự án con)', onclick: () => removeWorkspace(w) }, icon('close')))),
+      h('div', { class: `row ws-row${selected ? ' selected' : ''}`, onclick: () => selectWorkspace(w.path), title: `Phiên Claude ở folder cha: ${w.path}` },
+        icon('folder'),
+        h('span', { class: 'label' }, 'Toàn bộ workspace', h('span', { class: 'label-sub' }, `${children.length} repo`)),
+        w.missing ? h('span', { class: 'badge', title: 'Thư mục không còn tồn tại' }, 'mất') : null,
+        h('button', { class: 'btn small start play', title: 'Mở phiên Claude ở folder cha', onclick: e => { e.stopPropagation(); startSession(w.path); } }, icon('play'))),
+      list.map((s, i) => sessionRow(s, sessionLabel(s, i), sel)),
+      h('div', { class: 'workspace-children' }, children.map(p => projectBlock(p, sel, placed)))));
+  }
+
+  for (const p of state.projects) if (!nested.has(p)) nodes.push(projectBlock(p, sel, placed));
+
+  const others = state.sessions.filter(s => !placed.has(s.id));
+  if (others.length) {
+    nodes.push(h('div', { class: 'group-title' }, icon('terminal'), 'Phiên khác'));
+    nodes.push(others.map((s, i) => sessionRow(s, `${basename(s.cwd)} · ${sessionLabel(s, i)}`, sel)));
+  }
+  tree.replaceChildren(...nodes.flat(Infinity));
+}
+
+function projectBlock(p, sel, placed) {
+  {
     const wts = p.worktrees.map(wt => {
       const list = sessionsIn(wt.path);
       list.forEach(s => placed.add(s.id));
@@ -685,28 +877,22 @@ function renderTree() {
           wt.main ? null : h('span', { class: 'badge' }, 'wt'),
           wt.changes?.length ? h('span', { class: 'badge changes', title: 'Số file đã sửa' }, icon('edit'), wt.changes.length) : null,
           wt.main ? null : h('button', { class: 'btn small start', title: 'Đặt tên cho thư mục này', onclick: e => { e.stopPropagation(); renameFolder(wt.path, wt.alias, 'thư mục'); } }, icon('edit')),
-          h('button', { class: 'btn small start', title: 'Mở phiên Claude mới', onclick: e => { e.stopPropagation(); startSession(wt.path); } }, icon('play'))),
+          h('button', { class: 'btn small start play', title: 'Mở phiên Claude mới', onclick: e => { e.stopPropagation(); startSession(wt.path); } }, icon('play'))),
         list.map((s, i) => sessionRow(s, sessionLabel(s, i), sel)),
       ];
     });
-    nodes.push(h('div', { class: 'project' },
+    return h('div', { class: 'project' },
       h('div', { class: 'project-head', title: p.path },
         icon('repo'),
         h('span', { class: 'name' }, projectLabel(p), projectHint(p) ? h('span', { class: 'name-hint' }, projectHint(p)) : null),
         h('span', { class: 'tools' },
           h('button', { class: 'btn small', title: 'Đặt tên hiển thị cho dự án', onclick: () => renameFolder(p.path, p.alias, 'dự án') }, icon('edit')),
           h('button', { class: 'btn small', title: 'Tạo worktree / nhánh mới', onclick: () => addWorktree(p) }, icon('plus'), 'nhánh'),
-          h('button', { class: 'btn small danger', title: 'Gỡ khỏi dashboard', onclick: () => removeProject(p) }, icon('close')))),
+          h('button', { class: 'btn small danger', title: 'Gỡ khỏi dashboard', onclick: () => removeProject(p) }, icon('close'))),
+        p.error ? null : h('button', { class: 'btn small primary head-start', title: `Mở phiên Claude ở thư mục dự án\n${p.path}`, onclick: () => startSession(p.path) }, icon('play'))),
       p.error ? h('div', { class: 'project-error' }, p.error) : null,
-      wts));
+      wts);
   }
-
-  const others = state.sessions.filter(s => !placed.has(s.id));
-  if (others.length) {
-    nodes.push(h('div', { class: 'group-title' }, icon('terminal'), 'Phiên khác'));
-    nodes.push(others.map((s, i) => sessionRow(s, `${basename(s.cwd)} · ${sessionLabel(s, i)}`, sel)));
-  }
-  tree.replaceChildren(...nodes.flat(Infinity));
 }
 
 function renderOverview() {
@@ -716,7 +902,7 @@ function renderOverview() {
     const found = findWorktree(s.cwd);
     return h('button', { class: `card ${s.status}`, onclick: () => selectSession(s.id) },
       h('div', { class: 'top' }, dot(s), h('span', { class: `status-text ${s.status}` }, STATUS[s.status]), s.unread ? h('span', { class: 'badge changes' }, 'mới') : null),
-      h('div', { class: 'where' }, icon(found ? 'branch' : 'folder'), found ? `${projectLabel(found.project)} › ${wtLabel(found.wt)}` : s.cwd),
+      h('div', { class: 'where' }, icon(found ? 'branch' : findWorkspace(s.cwd) ? 'grid' : 'folder'), found || findWorkspace(s.cwd) ? placeLabel(s.cwd) : s.cwd),
       h('div', { class: 'title' }, s.name ? h('strong', {}, s.name) : null, s.name && s.title ? ' — ' : null, s.title || (s.name ? null : '(chưa có yêu cầu)')),
       s.status === 'waiting' && s.lastMessage ? h('div', { class: 'msg' }, s.lastMessage) : null);
   });
@@ -746,6 +932,7 @@ function renderWorktreeView() {
       h('button', { class: 'btn ghost', onclick: () => api('POST', '/api/open', { cwd: wt.path, tool: 'lazygit' }) }, icon('git'), 'lazygit'),
       h('button', { class: 'btn ghost', onclick: () => api('POST', '/api/open', { cwd: wt.path, tool: 'explorer' }) }, icon('folder'), 'Thư mục'),
       h('button', { class: 'btn ghost', title: 'Mở terminal tại thư mục này', onclick: () => openShell(wt.path) }, icon('terminal'), 'Terminal'),
+      h('button', { class: 'btn ghost', title: 'Xem và sửa file trong thư mục này', onclick: () => openEditor(wt.path) }, icon('file'), 'Tệp'),
       wt.main
         ? h('button', { class: 'btn ghost', onclick: () => renameFolder(project.path, project.alias, 'dự án') }, icon('edit'), 'Đặt tên dự án')
         : h('button', { class: 'btn ghost', onclick: () => renameFolder(wt.path, wt.alias, 'thư mục') }, icon('edit'), 'Đặt tên thư mục')),
@@ -755,7 +942,42 @@ function renderWorktreeView() {
       h('div', { class: 'title' }, sessionLabel(s, i))))) : null,
     historySection(wt.path),
     h('h3', {}, `File đã sửa (${wt.changes?.length || 0})`),
-    fileList(wt.path, wt.changes));
+    fileList(wt.path, wt.changes),
+    gitLogSection(wt.path));
+}
+
+function renderWorkspaceView() {
+  const w = findWorkspace(state.selected.path);
+  const view = document.getElementById('worktree-view');
+  if (!w) {
+    view.replaceChildren(h('p', { class: 'hint' }, 'Workspace không còn tồn tại.'));
+    return;
+  }
+  const list = sessionsIn(w.path);
+  const children = state.projects.filter(p => isInside(p.path, w.path));
+  fill(view,
+    h('h2', {}, `Workspace › ${wsLabel(w)}`),
+    h('p', { class: 'hint' }, `${w.path} — phiên Claude mở ở đây làm việc được trên mọi repo bên dưới và đọc CLAUDE.md / AGENTS.md của folder cha.`),
+    h('div', { class: 'start-actions' },
+      h('button', { class: 'btn primary', onclick: () => startSession(w.path) }, icon('play'), 'Phiên Claude mới'),
+      h('button', { class: 'btn', onclick: () => startSession(w.path, { continue: true }) }, icon('resume'), 'Tiếp tục phiên gần nhất'),
+      h('button', { class: 'btn ghost', onclick: () => openShell(w.path) }, icon('terminal'), 'Terminal'),
+      h('button', { class: 'btn ghost', title: 'Xem và sửa file trong workspace', onclick: () => openEditor(w.path) }, icon('file'), 'Tệp'),
+      h('button', { class: 'btn ghost', onclick: () => api('POST', '/api/open', { cwd: w.path, tool: 'explorer' }) }, icon('folder'), 'Thư mục'),
+      h('button', { class: 'btn ghost', onclick: () => renameFolder(w.path, w.alias, 'workspace') }, icon('edit'), 'Đặt tên workspace')),
+    list.length ? h('h3', {}, 'Phiên đang mở') : null,
+    list.length ? h('div', { class: 'cards' }, list.map((s, i) => h('button', { class: `card ${s.status}`, onclick: () => selectSession(s.id) },
+      h('div', { class: 'top' }, dot(s), h('span', { class: `status-text ${s.status}` }, STATUS[s.status])),
+      h('div', { class: 'title' }, sessionLabel(s, i))))) : null,
+    historySection(w.path),
+    h('h3', {}, `Repo trong workspace (${children.length})`),
+    h('ul', { class: 'file-list ws-repos' }, children.map(p => {
+      const main = p.worktrees.find(wt => wt.main) || p.worktrees[0];
+      const changes = p.worktrees.reduce((n, wt) => n + (wt.changes?.length || 0), 0);
+      return h('li', { onclick: () => main && selectWorktree(main.path), title: p.path },
+        h('span', { class: 'code' }, changes || '·'),
+        h('span', {}, projectLabel(p), main ? h('span', { class: 'label-sub' }, ` ${branchLabel(main)}`) : null));
+    })));
 }
 
 function historySection(path) {
@@ -902,7 +1124,7 @@ function renderSessionView() {
     dot(s),
     h('span', { class: `status-text ${s.status}` }, STATUS[s.status]),
     h('span', { class: 'sep' }, '·'),
-    h('strong', {}, found ? projectLabel(found.project) : basename(s.cwd)),
+    h('strong', {}, found ? projectLabel(found.project) : placeLabel(s.cwd)),
     found ? h('span', { class: 'sep' }, '›') : null,
     found ? h('span', {}, wtLabel(found.wt)) : null,
     s.title ? h('span', { class: 'sep' }, '—') : null,
@@ -932,15 +1154,284 @@ function render() {
   renderTree();
   const kind = state.selected?.kind;
   document.getElementById('overview').hidden = !!kind;
-  document.getElementById('worktree-view').hidden = kind !== 'worktree';
+  document.getElementById('worktree-view').hidden = kind !== 'worktree' && kind !== 'workspace';
   document.getElementById('session-view').hidden = kind !== 'session';
   if (!kind) renderOverview();
   else if (kind === 'worktree') renderWorktreeView();
+  else if (kind === 'workspace') renderWorkspaceView();
   else renderSessionView();
+  if (editor.open) renderEditor();
+}
+
+// ---------- text editor (CodeMirror 5) ----------
+const editor = {
+  open: false,
+  root: null,
+  expanded: new Map(), // normalized dir -> dir as typed (keeps the real casing)
+  dirs: new Map(), // normalized dir -> { loading } | { entries } | { error }
+  tabs: [], // { path, name, doc, mtime, bom, eol, cleanGen }
+  active: null, // path
+  cm: null,
+};
+
+const MODES = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', json: { name: 'javascript', json: true },
+  ts: 'text/typescript', jsx: 'jsx', tsx: { name: 'jsx', base: { name: 'javascript', typescript: true } },
+  css: 'css', scss: 'text/x-scss', less: 'text/x-less',
+  html: 'htmlmixed', htm: 'htmlmixed', cshtml: 'htmlmixed', razor: 'htmlmixed',
+  xml: 'xml', csproj: 'xml', props: 'xml', targets: 'xml', config: 'xml', svg: 'xml', resx: 'xml', sln: null,
+  cs: 'text/x-csharp', java: 'text/x-java', c: 'text/x-csrc', h: 'text/x-csrc', cpp: 'text/x-c++src', kt: 'text/x-kotlin',
+  md: 'markdown', sql: 'text/x-sql', yml: 'yaml', yaml: 'yaml', py: 'python',
+  sh: 'shell', bash: 'shell', ps1: 'powershell', psm1: 'powershell',
+};
+const extOf = p => (basename(p).split('.').pop() || '').toLowerCase();
+const modeFor = p => MODES[extOf(p)] ?? null;
+const twoSpace = p => ['js', 'mjs', 'cjs', 'json', 'ts', 'jsx', 'tsx', 'css', 'scss', 'less', 'html', 'yml', 'yaml', 'md'].includes(extOf(p));
+const tabDirty = t => !t.doc.isClean(t.cleanGen);
+const joinPath = (dir, name) => `${dir.replace(/[\\/]+$/, '')}\\${name}`;
+
+function ensureCm() {
+  if (editor.cm) return editor.cm;
+  editor.cm = CodeMirror(document.getElementById('editor-cm'), {
+    theme: 'hub',
+    lineNumbers: true,
+    matchBrackets: true,
+    autoCloseBrackets: true,
+    styleActiveLine: true,
+    indentWithTabs: false,
+    extraKeys: {
+      'Ctrl-S': () => saveActive(),
+      'Cmd-S': () => saveActive(),
+      'Ctrl-/': 'toggleComment',
+      'Cmd-/': 'toggleComment',
+      'Alt-G': 'jumpToLine',
+    },
+  });
+  editor.cm.on('change', () => renderEditorTabs());
+  editor.cm.on('cursorActivity', () => renderEditorStatus());
+  return editor.cm;
+}
+
+async function openEditor(root, file) {
+  if (editor.root && norm(editor.root) !== norm(root)) {
+    editor.expanded.clear();
+  }
+  editor.root = root;
+  editor.open = true;
+  editor.expanded.set(norm(root), root);
+  document.getElementById('editor-view').hidden = false;
+  ensureCm();
+  renderEditor();
+  loadDir(root);
+  if (file) {
+    // reveal the file's folders in the tree
+    let dir = file.replace(/[\\/][^\\/]+$/, '');
+    while (isInside(dir, root) && norm(dir) !== norm(root)) {
+      editor.expanded.set(norm(dir), dir);
+      loadDir(dir);
+      dir = dir.replace(/[\\/][^\\/]+$/, '');
+    }
+    await openFile(file);
+  }
+  requestAnimationFrame(() => editor.cm.refresh());
+}
+
+function closeEditor() {
+  editor.open = false;
+  document.getElementById('editor-view').hidden = true;
+}
+
+async function loadDir(dir, force = false) {
+  const key = norm(dir);
+  if (!force && editor.dirs.get(key) && !editor.dirs.get(key).error) return;
+  editor.dirs.set(key, { loading: true });
+  renderEditorTree();
+  try {
+    const { entries } = await api('GET', `/api/fs/list?path=${encodeURIComponent(dir)}`);
+    editor.dirs.set(key, { entries });
+  } catch (err) {
+    editor.dirs.set(key, { error: err.message });
+  }
+  renderEditorTree();
+}
+
+async function openFile(path) {
+  const existing = editor.tabs.find(t => norm(t.path) === norm(path));
+  if (existing) return activateTab(existing.path);
+  let data;
+  try {
+    data = await api('GET', `/api/fs/read?path=${encodeURIComponent(path)}`);
+  } catch {
+    return; // api() already showed the reason (binary, too large, outside the hub…)
+  }
+  const doc = CodeMirror.Doc(data.text, modeFor(path));
+  const tab = { path: data.path, name: basename(data.path), doc, mtime: data.mtime, bom: data.bom, eol: data.eol, cleanGen: doc.changeGeneration() };
+  editor.tabs.push(tab);
+  activateTab(tab.path);
+}
+
+function activateTab(path) {
+  const tab = editor.tabs.find(t => norm(t.path) === norm(path));
+  if (!tab) return;
+  editor.active = tab.path;
+  const cm = ensureCm();
+  if (cm.getDoc() !== tab.doc) cm.swapDoc(tab.doc);
+  cm.setOption('indentUnit', twoSpace(tab.path) ? 2 : 4);
+  cm.setOption('tabSize', twoSpace(tab.path) ? 2 : 4);
+  renderEditor();
+  requestAnimationFrame(() => { cm.refresh(); cm.focus(); });
+}
+
+function closeTab(path) {
+  const i = editor.tabs.findIndex(t => norm(t.path) === norm(path));
+  if (i === -1) return;
+  if (tabDirty(editor.tabs[i]) && !confirm(`"${editor.tabs[i].name}" có thay đổi chưa lưu. Đóng và bỏ các thay đổi?`)) return;
+  editor.tabs.splice(i, 1);
+  if (norm(editor.active || '') === norm(path)) {
+    const next = editor.tabs[i] || editor.tabs[i - 1];
+    editor.active = null;
+    if (next) return activateTab(next.path);
+    editor.cm?.swapDoc(CodeMirror.Doc(''));
+  }
+  renderEditor();
+}
+
+async function reloadTab(tab) {
+  const data = await api('GET', `/api/fs/read?path=${encodeURIComponent(tab.path)}`);
+  tab.doc.setValue(data.text);
+  Object.assign(tab, { mtime: data.mtime, bom: data.bom, eol: data.eol, cleanGen: tab.doc.changeGeneration() });
+  renderEditor();
+}
+
+async function saveActive(force = false) {
+  const tab = editor.tabs.find(t => norm(t.path) === norm(editor.active || ''));
+  if (!tab) return;
+  const res = await fetch('/api/fs/write', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hub-token': window.HUB_TOKEN },
+    body: JSON.stringify({ path: tab.path, text: tab.doc.getValue(), mtime: tab.mtime, bom: tab.bom, eol: tab.eol, force }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 409) {
+    if (confirm(`"${tab.name}" đã bị thay đổi trên ổ đĩa sau khi bạn mở (có thể do Claude sửa).\n\nOK: ghi đè bằng nội dung của bạn.\nCancel: không lưu.`)) return saveActive(true);
+    if (confirm('Tải lại bản trên ổ đĩa? Các thay đổi chưa lưu của bạn sẽ mất.')) await reloadTab(tab);
+    return;
+  }
+  if (!res.ok) {
+    alert(data.error || `Lỗi ${res.status}`);
+    return;
+  }
+  tab.mtime = data.mtime;
+  tab.cleanGen = tab.doc.changeGeneration();
+  renderEditor();
+  flashStatus(`Đã lưu ${tab.name}`);
+}
+
+// absolute paths of files git reports as changed, to mark them in the tree
+function changedPaths() {
+  const set = new Set();
+  for (const p of state.projects) for (const wt of p.worktrees) {
+    for (const c of wt.changes || []) set.add(norm(joinPath(wt.path, c.file.replace(/\//g, '\\'))));
+  }
+  return set;
+}
+
+function renderEditor() {
+  if (!editor.open) return;
+  const w = findWorkspace(editor.root);
+  document.getElementById('editor-root').textContent = w ? `Workspace ${wsLabel(w)} — ${editor.root}` : `${placeLabel(editor.root)} — ${editor.root}`;
+  renderEditorTree();
+  renderEditorTabs();
+  renderEditorStatus();
+  const hasTab = !!editor.active;
+  document.getElementById('editor-cm').style.visibility = hasTab ? 'visible' : 'hidden';
+  document.getElementById('editor-empty').hidden = hasTab;
+}
+
+function renderEditorTree() {
+  if (!editor.open || !editor.root) return;
+  const changed = changedPaths();
+  const node = (dir, depth) => {
+    const st = editor.dirs.get(norm(dir));
+    if (!st || st.loading) return h('div', { class: 'et-msg', style: `padding-left:${depth * 14 + 22}px` }, 'đang đọc…');
+    if (st.error) return h('div', { class: 'et-msg err', style: `padding-left:${depth * 14 + 22}px` }, st.error);
+    return st.entries.map(e => {
+      const full = joinPath(dir, e.name);
+      const open = e.dir && editor.expanded.has(norm(full));
+      const isActive = !e.dir && norm(full) === norm(editor.active || '');
+      const row = h('div', {
+        class: `et-row${e.dir ? ' dir' : ''}${isActive ? ' on' : ''}${!e.dir && changed.has(norm(full)) ? ' changed' : ''}`,
+        style: `padding-left:${depth * 14 + 8}px`, title: full,
+        onclick: () => {
+          if (!e.dir) return openFile(full);
+          if (open) editor.expanded.delete(norm(full));
+          else { editor.expanded.set(norm(full), full); loadDir(full); }
+          renderEditorTree();
+        },
+      }, h('span', { class: 'et-caret' }, e.dir ? (open ? '▾' : '▸') : ''), icon(e.dir ? 'folder' : 'file'), h('span', { class: 'et-name' }, e.name));
+      return open ? [row, node(full, depth + 1)] : row;
+    });
+  };
+  const tree = document.getElementById('editor-tree');
+  const top = tree.scrollTop;
+  fill(tree, node(editor.root, 0));
+  tree.scrollTop = top;
+}
+
+function renderEditorTabs() {
+  if (!editor.open) return;
+  fill(document.getElementById('editor-tabs'), editor.tabs.map(t => h('div', {
+    class: `et-tab${norm(t.path) === norm(editor.active || '') ? ' on' : ''}${tabDirty(t) ? ' dirty' : ''}`,
+    title: t.path, onclick: () => activateTab(t.path),
+    onauxclick: e => { if (e.button === 1) closeTab(t.path); },
+  }, h('span', { class: 'tl' }, t.name), h('span', { class: 'dirty-dot', title: 'Chưa lưu' }),
+  h('button', { class: 'x', title: 'Đóng tab', onclick: e => { e.stopPropagation(); closeTab(t.path); } }, icon('close')))));
+}
+
+let statusFlash = null;
+function flashStatus(text) {
+  statusFlash = text;
+  renderEditorStatus();
+  setTimeout(() => { statusFlash = null; renderEditorStatus(); }, 2000);
+}
+
+function renderEditorStatus() {
+  if (!editor.open) return;
+  const tab = editor.tabs.find(t => norm(t.path) === norm(editor.active || ''));
+  const el = document.getElementById('editor-status');
+  if (!tab) return el.replaceChildren();
+  const cur = tab.doc.getCursor();
+  const mode = modeFor(tab.path);
+  fill(el,
+    h('span', { class: 'es-path' }, tab.path),
+    statusFlash ? h('span', { class: 'es-flash' }, statusFlash) : (tabDirty(tab) ? h('span', { class: 'es-dirty' }, '● chưa lưu — Ctrl+S để lưu') : null),
+    h('span', {}, `Dòng ${cur.line + 1}, cột ${cur.ch + 1}`),
+    h('span', {}, tab.eol.toUpperCase()),
+    h('span', {}, tab.bom ? 'UTF-8 BOM' : 'UTF-8'),
+    h('span', {}, typeof mode === 'string' ? mode.replace(/^text\/x-/, '') : mode?.name || 'text'),
+    h('button', { class: 'btn small ghost', title: 'Đọc lại file từ ổ đĩa', onclick: () => (!tabDirty(tab) || confirm('Bỏ thay đổi chưa lưu và tải lại file?')) && reloadTab(tab) }, icon('resume'), 'Tải lại'));
+}
+
+{
+  document.getElementById('editor-close').onclick = closeEditor;
+  document.getElementById('editor-refresh').onclick = () => {
+    for (const [key, dir] of editor.expanded) {
+      editor.dirs.delete(key);
+      loadDir(dir, true);
+    }
+  };
+  window.addEventListener('beforeunload', e => {
+    if (editor.tabs.some(tabDirty)) { e.preventDefault(); e.returnValue = ''; }
+  });
 }
 
 // ---------- wiring ----------
-document.getElementById('home').onclick = () => { state.selected = null; render(); };
+document.getElementById('home').onclick = () => { closeEditor(); state.selected = null; render(); };
+document.getElementById('diff-edit').onclick = () => {
+  if (!diffFile) return;
+  document.getElementById('diff-modal').hidden = true;
+  openEditor(diffFile.cwd, joinPath(diffFile.cwd, diffFile.file.replace(/\//g, '\\')));
+};
 document.getElementById('add-project').onclick = addProject;
 document.getElementById('diff-close').onclick = () => { document.getElementById('diff-modal').hidden = true; };
 document.getElementById('diff-modal').onclick = e => { if (e.target.id === 'diff-modal') e.target.hidden = true; };
@@ -961,6 +1452,8 @@ document.querySelector('.session-head .actions').onclick = async e => {
     state.filesOpen = !state.filesOpen;
     render();
     requestAnimationFrame(fitSelected);
+  } else if (act === 'editor') {
+    await openEditor(s.cwd);
   } else if (act === 'shell') {
     await openShell(s.cwd);
   } else if (act === 'rename') {

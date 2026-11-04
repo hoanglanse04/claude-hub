@@ -10,9 +10,12 @@ const { SessionManager, claudeCommand } = require('./sessions');
 const history = require('./history');
 const mcp = require('./mcp');
 const { ShellManager } = require('./shells');
+const { layout } = require('./graph');
+const files = require('./files');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MODULES = path.join(__dirname, '..', 'node_modules');
+const CODEMIRROR = path.join(MODULES, 'codemirror');
 const STATIC = {
   '/': path.join(PUBLIC, 'index.html'),
   '/app.js': path.join(PUBLIC, 'app.js'),
@@ -64,15 +67,24 @@ function createHub({ port }) {
     }));
   }
 
+  function listWorkspaces() {
+    return (cfg.workspaces || []).map(dir => ({
+      path: dir, name: path.basename(dir), alias: config.aliasOf(cfg, dir), missing: !fs.existsSync(dir),
+    }));
+  }
+  const projectsMsg = () => ({ type: 'projects', projects, workspaces: listWorkspaces() });
+  // the editor may only touch files under a registered repo, one of its worktrees, or a workspace
+  const fileRoots = () => [...cfg.projects, ...projects.flatMap(p => p.worktrees.map(w => w.path)), ...(cfg.workspaces || [])];
+
   let scanning = null;
   function refreshProjects() {
     if (!scanning) {
       scanning = scanProjects().then(result => {
         projects = result;
-        const json = JSON.stringify(result);
+        const json = JSON.stringify([result, listWorkspaces()]);
         if (json !== projectsJSON) {
           projectsJSON = json;
-          broadcast({ type: 'projects', projects });
+          broadcast(projectsMsg());
         }
       }).finally(() => { scanning = null; });
     }
@@ -120,7 +132,7 @@ function createHub({ port }) {
     }
     if (route === 'GET /api/state') {
       await refreshProjects();
-      return send(200, { projects, sessions: sessions.list() });
+      return send(200, { projects, workspaces: listWorkspaces(), sessions: sessions.list() });
     }
     if (route === 'POST /api/refresh') {
       await refreshProjects();
@@ -129,10 +141,17 @@ function createHub({ port }) {
     if (route === 'POST /api/projects') {
       if (!body.path || !fs.existsSync(body.path)) return send(400, { error: 'Thư mục không tồn tại' });
       const added = await config.addProjects(cfg, body.path);
-      if (!added.length) return send(400, { error: 'Không tìm thấy git repo mới trong thư mục này' });
+      const workspace = await config.addWorkspace(cfg, body.path);
+      if (!added.length && !workspace) return send(400, { error: 'Không tìm thấy git repo mới trong thư mục này' });
       config.save(cfg);
       await refreshProjects();
-      return send(200, { added });
+      return send(200, { added, workspace });
+    }
+    if (route === 'DELETE /api/workspaces') {
+      config.removeWorkspace(cfg, body.path);
+      config.save(cfg);
+      await refreshProjects();
+      return send(200, { ok: true });
     }
     if (route === 'DELETE /api/projects') {
       config.removeProject(cfg, body.path);
@@ -157,6 +176,36 @@ function createHub({ port }) {
     if (route === 'GET /api/diff') {
       const text = await git.diff(url.searchParams.get('cwd'), url.searchParams.get('file'));
       return send(200, { diff: text });
+    }
+    if (route === 'GET /api/fs/list') {
+      const dir = files.resolveSafe(url.searchParams.get('path'), fileRoots());
+      return send(200, { path: dir, entries: files.list(dir) });
+    }
+    if (route === 'GET /api/fs/read') {
+      const file = files.resolveSafe(url.searchParams.get('path'), fileRoots());
+      return send(200, { path: file, ...files.read(file) });
+    }
+    if (route === 'POST /api/fs/write') {
+      const file = files.resolveSafe(body.path, fileRoots());
+      if (typeof body.text !== 'string') return send(400, { error: 'Thiếu nội dung' });
+      const result = files.write(file, body.text, { mtime: body.mtime, bom: !!body.bom, eol: body.eol, force: !!body.force });
+      if (result.conflict) return send(409, { error: 'File đã bị thay đổi trên ổ đĩa kể từ lúc bạn mở', mtime: result.mtime });
+      refreshProjects();
+      return send(200, result);
+    }
+    if (route === 'GET /api/log') {
+      const cwd = url.searchParams.get('cwd');
+      if (!cwd || !fs.existsSync(cwd)) return send(400, { error: 'Thư mục không tồn tại' });
+      const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 3000);
+      const commits = await git.log(cwd, { all: url.searchParams.get('all') === '1', limit });
+      const { rows, width } = layout(commits);
+      return send(200, { width, commits: commits.map((c, i) => ({ ...c, ...rows[i] })), more: commits.length === limit });
+    }
+    if (route === 'GET /api/commit') {
+      const cwd = url.searchParams.get('cwd');
+      const hash = url.searchParams.get('hash') || '';
+      if (!/^[0-9a-f]{7,40}$/i.test(hash)) return send(400, { error: 'Mã commit không hợp lệ' });
+      return send(200, { text: await git.showCommit(cwd, hash) });
     }
     if (route === 'GET /api/history') {
       const cwd = url.searchParams.get('cwd');
@@ -227,14 +276,20 @@ function createHub({ port }) {
         let body = {};
         try { body = raw ? JSON.parse(raw) : {}; } catch { /* empty body */ }
         api(req, res, url, body).catch(err => {
-          res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+          res.writeHead(err.status || 500, { 'content-type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ error: err.message }));
         });
       });
       return;
     }
 
-    const file = STATIC[url.pathname];
+    let file = STATIC[url.pathname];
+    // CodeMirror ships as many small files (modes, addons); serve them from its package folder
+    if (!file && url.pathname.startsWith('/vendor/cm/')) {
+      const rel = path.normalize(decodeURIComponent(url.pathname.slice('/vendor/cm/'.length)));
+      const full = path.join(CODEMIRROR, rel);
+      if (!rel.startsWith('..') && !path.isAbsolute(rel) && /\.(js|css)$/.test(rel) && fs.existsSync(full)) file = full;
+    }
     if (!file) {
       res.writeHead(404);
       return res.end('Not found');
@@ -257,7 +312,7 @@ function createHub({ port }) {
 
   wss.on('connection', ws => {
     clients.add(ws);
-    ws.send(JSON.stringify({ type: 'projects', projects }));
+    ws.send(JSON.stringify(projectsMsg()));
     ws.send(JSON.stringify({ type: 'sessions', sessions: sessions.list() }));
     for (const s of sessions.list()) ws.send(JSON.stringify({ type: 'replay', id: s.id, data: sessions.buffer(s.id) }));
     ws.send(JSON.stringify(shellsMsg()));

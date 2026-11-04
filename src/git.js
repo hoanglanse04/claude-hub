@@ -72,6 +72,41 @@ async function diff(dir, file) {
     .catch(err => err.message);
 }
 
+// "HEAD -> refs/heads/main, refs/remotes/origin/main, tag: refs/tags/v1" (from --decorate=full)
+function parseRefs(text) {
+  const refs = [];
+  for (let part of text.split(', ').filter(Boolean)) {
+    let head = false;
+    if (part.startsWith('HEAD -> ')) { head = true; part = part.slice(8); }
+    if (part === 'HEAD') refs.push({ name: 'HEAD', kind: 'head' });
+    else if (part.startsWith('tag: ')) refs.push({ name: part.slice(5).replace(/^refs\/tags\//, ''), kind: 'tag' });
+    else if (part.startsWith('refs/heads/')) refs.push({ name: part.slice(11), kind: head ? 'head' : 'local' });
+    else if (part.startsWith('refs/remotes/')) {
+      const name = part.slice(13);
+      if (!name.endsWith('/HEAD')) refs.push({ name, kind: 'remote' });
+    } else refs.push({ name: part, kind: 'other' });
+  }
+  return refs;
+}
+
+const LOG_FORMAT = ['%H', '%P', '%an', '%at', '%D', '%s'].join('%x1f') + '%x1e';
+
+function parseLog(text) {
+  return text.split('\x1e').map(r => r.replace(/^\r?\n/, '')).filter(Boolean).map(r => {
+    const [hash, parents, author, time, refs, subject] = r.split('\x1f');
+    return { hash, parents: parents ? parents.split(' ') : [], author, time: Number(time) * 1000, refs: parseRefs(refs || ''), subject: subject || '' };
+  });
+}
+
+async function log(dir, { all = false, limit = 200 } = {}) {
+  const args = ['log', '--topo-order', '--decorate=full', `--format=${LOG_FORMAT}`, `-n${limit}`, all ? '--all' : 'HEAD'];
+  return parseLog(await git(dir, args));
+}
+
+async function showCommit(dir, hash) {
+  return git(dir, ['show', '--stat', '--patch', '--date=iso', '--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%B', hash]);
+}
+
 function worktreeDirFor(repo, branch) {
   const safe = branch.replace(/[^\w.-]+/g, '-');
   return path.join(path.dirname(repo), `${path.basename(repo)}.wt`, safe);
@@ -84,4 +119,4 @@ async function addWorktree(repo, branch) {
   return dir;
 }
 
-module.exports = { parseWorktrees, parseStatus, isRepo, listWorktrees, changedFiles, diff, addWorktree, worktreeDirFor };
+module.exports = { parseWorktrees, parseStatus, parseRefs, parseLog, isRepo, listWorktrees, changedFiles, diff, log, showCommit, addWorktree, worktreeDirFor };

@@ -6,6 +6,8 @@
   <title>Claude Hub</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 1h6l4 4v6l-4 4H5l-4-4V5z' fill='%23000' stroke='%23faad14' stroke-width='1.5'/%3E%3Cpath d='M6 5.5 8 8l-2 2.5M8.5 10.5H11' fill='none' stroke='%23faad14' stroke-width='1.5'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/vendor/cm/lib/codemirror.css">
+  <link rel="stylesheet" href="/vendor/cm/addon/dialog/dialog.css">
   <link rel="stylesheet" href="/style.css">
   <script>window.HUB_TOKEN = '__HUB_TOKEN__';</script>
 </head>
@@ -55,6 +57,24 @@
     <main class="main">
       <section id="overview" class="overview"></section>
       <section id="worktree-view" class="panel" hidden></section>
+      <section id="editor-view" class="editor-view" hidden>
+        <div class="editor-head">
+          <svg class="ico"><use href="#i-file"/></svg>
+          <span class="editor-title" id="editor-root"></span>
+          <span class="spacer"></span>
+          <button class="btn small ghost" id="editor-refresh" title="Đọc lại cây thư mục"><svg class="ico"><use href="#i-resume"/></svg>Làm mới cây</button>
+          <button class="btn small ghost" id="editor-close" title="Ẩn editor (các tab vẫn giữ)"><svg class="ico"><use href="#i-close"/></svg>Đóng</button>
+        </div>
+        <div class="editor-body">
+          <nav class="editor-tree" id="editor-tree"></nav>
+          <div class="editor-main">
+            <div class="editor-tabs" id="editor-tabs"></div>
+            <div class="editor-cm" id="editor-cm"></div>
+            <div class="editor-empty" id="editor-empty">Chọn một file ở cây bên trái để mở.</div>
+            <div class="editor-status" id="editor-status"></div>
+          </div>
+        </div>
+      </section>
       <section id="session-view" class="session-view" hidden>
         <div class="session-head">
           <div class="crumbs" id="session-crumbs"></div>
@@ -62,6 +82,7 @@
             <button class="btn ghost" data-act="shell" title="Mở terminal tại thư mục của phiên"><svg class="ico"><use href="#i-terminal"/></svg>Terminal</button>
             <button class="btn ghost" data-act="rename" title="Đặt tên phiên"><svg class="ico"><use href="#i-edit"/></svg>Đặt tên</button>
             <button class="btn ghost" data-act="mcp"><svg class="ico"><use href="#i-plug"/></svg><span class="mcp-label">MCP</span></button>
+            <button class="btn ghost" data-act="editor" title="Xem và sửa file trong thư mục của phiên"><svg class="ico"><use href="#i-edit"/></svg>Tệp</button>
             <button class="btn ghost" data-act="files"><svg class="ico"><use href="#i-file"/></svg><span class="files-label">File đã sửa</span></button>
             <button class="btn ghost" data-act="lazygit"><svg class="ico"><use href="#i-git"/></svg>lazygit</button>
             <button class="btn ghost" data-act="explorer"><svg class="ico"><use href="#i-folder"/></svg>Thư mục</button>
@@ -79,7 +100,7 @@
   </div>
   <div class="diff-modal" id="diff-modal" hidden>
     <div class="diff-box">
-      <div class="diff-head"><span id="diff-title"></span><button class="btn ghost" id="diff-close"><svg class="ico"><use href="#i-close"/></svg>Đóng</button></div>
+      <div class="diff-head"><span id="diff-title"></span><span class="spacer"></span><button class="btn ghost" id="diff-edit" hidden><svg class="ico"><use href="#i-edit"/></svg>Mở trong editor</button><button class="btn ghost" id="diff-close"><svg class="ico"><use href="#i-close"/></svg>Đóng</button></div>
       <pre id="diff-body"></pre>
     </div>
   </div>
@@ -100,6 +121,27 @@
   <style id="user-css"></style>
   <script src="/vendor/xterm.js"></script>
   <script src="/vendor/addon-fit.js"></script>
+  <script src="/vendor/cm/lib/codemirror.js"></script>
+  <script src="/vendor/cm/addon/dialog/dialog.js"></script>
+  <script src="/vendor/cm/addon/search/searchcursor.js"></script>
+  <script src="/vendor/cm/addon/search/search.js"></script>
+  <script src="/vendor/cm/addon/search/jump-to-line.js"></script>
+  <script src="/vendor/cm/addon/edit/matchbrackets.js"></script>
+  <script src="/vendor/cm/addon/edit/closebrackets.js"></script>
+  <script src="/vendor/cm/addon/selection/active-line.js"></script>
+  <script src="/vendor/cm/addon/comment/comment.js"></script>
+  <script src="/vendor/cm/mode/javascript/javascript.js"></script>
+  <script src="/vendor/cm/mode/css/css.js"></script>
+  <script src="/vendor/cm/mode/xml/xml.js"></script>
+  <script src="/vendor/cm/mode/htmlmixed/htmlmixed.js"></script>
+  <script src="/vendor/cm/mode/jsx/jsx.js"></script>
+  <script src="/vendor/cm/mode/clike/clike.js"></script>
+  <script src="/vendor/cm/mode/markdown/markdown.js"></script>
+  <script src="/vendor/cm/mode/sql/sql.js"></script>
+  <script src="/vendor/cm/mode/yaml/yaml.js"></script>
+  <script src="/vendor/cm/mode/python/python.js"></script>
+  <script src="/vendor/cm/mode/shell/shell.js"></script>
+  <script src="/vendor/cm/mode/powershell/powershell.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

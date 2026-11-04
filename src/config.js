@@ -11,10 +11,11 @@ function load() {
     const cfg = JSON.parse(fs.readFileSync(FILE, 'utf8'));
     return {
       projects: Array.isArray(cfg.projects) ? cfg.projects : [],
+      workspaces: Array.isArray(cfg.workspaces) ? cfg.workspaces : [],
       aliases: cfg.aliases && typeof cfg.aliases === 'object' ? cfg.aliases : {},
     };
   } catch {
-    return { projects: [], aliases: {} };
+    return { projects: [], workspaces: [], aliases: {} };
   }
 }
 
@@ -73,4 +74,26 @@ function removeProject(cfg, dir) {
   cfg.projects = cfg.projects.filter(p => !samePath(p, dir));
 }
 
-module.exports = { HOME, load, save, findRepos, addProjects, removeProject, samePath, aliasOf, setAlias };
+// A folder that is not itself inside a repo but holds repos becomes a workspace,
+// so a Claude session can be opened there to work across all of them.
+async function addWorkspace(cfg, dir) {
+  const full = path.resolve(dir);
+  cfg.workspaces ??= [];
+  if (await isRepo(full)) return false;
+  if (cfg.workspaces.some(w => samePath(w, full))) return false;
+  if (!(await findRepos(full)).length) return false;
+  cfg.workspaces.push(full);
+  return true;
+}
+
+function removeWorkspace(cfg, dir) {
+  cfg.workspaces = (cfg.workspaces || []).filter(w => !samePath(w, dir));
+}
+
+// path is dir itself or somewhere below it
+function isInside(child, dir) {
+  const rel = path.relative(path.resolve(dir), path.resolve(child));
+  return !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+module.exports = { HOME, load, save, findRepos, addProjects, removeProject, addWorkspace, removeWorkspace, isInside, samePath, aliasOf, setAlias };

@@ -5,11 +5,14 @@ Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code*
 ## Tính năng
 
 - **Nhiều phiên Claude song song**, nhóm theo dự án → nhánh/worktree. Trạng thái từng phiên (sẵn sàng, đang chạy, chờ bạn, xong, đã thoát) cập nhật trực tiếp qua hook của Claude Code.
+- **Workspace**: thêm một folder cha chứa nhiều repo thì folder đó thành workspace, mở được một phiên Claude ở folder cha để làm việc trên tất cả các repo con cùng lúc.
 - **Trang tổng quan**: phiên cần bạn xử lý luôn nằm đầu, kèm câu hỏi Claude đang chờ.
 - **Lịch sử phiên**: liệt kê các phiên Claude Code đã lưu của từng thư mục (cả phiên mở ngoài hub) và **mở lại** bằng `claude --resume`.
 - **MCP theo từng phiên**: xem các MCP server phiên đang dùng, kiểm tra kết nối, bật/tắt từng MCP. Đổi MCP sẽ khởi động lại phiên và giữ nguyên cuộc trò chuyện.
 - **Terminal popup**: mở PowerShell, cmd hoặc Git Bash ngay tại thư mục của nhánh/phiên; nhiều tab, kéo thả, đổi kích thước, thu nhỏ.
 - **Git**: tạo worktree/nhánh mới, xem file đã sửa và diff từng file, mở lazygit hoặc thư mục.
+- **Text editor nhẹ** (CodeMirror): cây thư mục của dự án/workspace, nhiều tab, tô màu cú pháp (C#, JS/TS/JSX, JSON, HTML/XML, CSS/SCSS, SQL, Markdown, YAML, Python, PowerShell, shell…), tìm/thay thế, Ctrl+S để lưu. Giữ nguyên BOM và kiểu xuống dòng CRLF/LF; cảnh báo trước khi ghi đè file đã bị sửa bên ngoài (ví dụ Claude vừa sửa). Không có IntelliSense/debug — dùng VS Code cho việc đó.
+- **Lịch sử git dạng cây**: cây commit có màu theo nhánh (merge, tách nhánh), nhãn nhánh/tag/remote, lọc theo nội dung hoặc tác giả, bấm vào commit để xem file đổi và diff. Chỉ xem, không thao tác lên repo.
 - **Đặt tên** cho dự án, thư mục worktree và phiên; tự phân biệt hai thư mục trùng tên (ví dụ hai bản clone của cùng một repo).
 - **Cài đặt giao diện**: bộ màu có sẵn, tự chọn màu, độ vát góc, cỡ chữ, font terminal, CSS tùy chỉnh; xuất/nhập cấu hình.
 
@@ -65,7 +68,7 @@ claude-hub [--port 4317] [--no-open]
 
 ## Bắt đầu sử dụng
 
-1. Bấm **Thêm dự án** và nhập đường dẫn một repo git, hoặc một thư mục chứa nhiều repo (hub quét sâu 2 cấp).
+1. Bấm **Thêm dự án** và nhập đường dẫn một repo git, hoặc một thư mục chứa nhiều repo (hub quét sâu 2 cấp). Với thư mục chứa nhiều repo, hub thêm từng repo và tạo thêm một **workspace** cho chính thư mục đó: bấm **Toàn bộ workspace** để mở phiên Claude ở folder cha.
 2. Ở sidebar, chọn một nhánh rồi bấm **▶** (hoặc **Phiên Claude mới** trong trang của nhánh).
 3. Gõ yêu cầu trong terminal như dùng Claude Code bình thường. Khi Claude cần bạn hoặc làm xong, hub đổi trạng thái, phát âm thanh và gửi thông báo (bấm **Bật thông báo** một lần để cho phép).
 4. Trang của nhánh có **Lịch sử phiên** để mở lại phiên cũ, nút **Terminal**, **lazygit** và danh sách **file đã sửa** (bấm vào để xem diff).
@@ -80,7 +83,7 @@ claude-hub [--port 4317] [--no-open]
 
 | Dữ liệu | Vị trí |
 |---|---|
-| Danh sách dự án, tên tùy đặt | `~/.claude-hub/config.json` |
+| Danh sách dự án, workspace, tên tùy đặt | `~/.claude-hub/config.json` |
 | Hook báo trạng thái (tự tạo mỗi lần chạy) | `~/.claude-hub/hook-settings.json` |
 | Cấu hình MCP riêng của từng phiên | `~/.claude-hub/mcp/<id>.json` (xóa khi đóng phiên) |
 | Cài đặt giao diện | `localStorage` của trình duyệt, theo từng cổng |
@@ -93,6 +96,7 @@ Danh sách phiên đang mở và tên phiên chỉ nằm trong bộ nhớ của 
 - Hub chỉ lắng nghe trên `127.0.0.1`, mỗi lần chạy sinh một token ngẫu nhiên; API và WebSocket từ chối request thiếu token hoặc đến từ origin khác.
 - Hub chỉ gắn hook vào những phiên do chính nó mở (qua `--settings`), không đụng vào cấu hình Claude Code chung.
 - Terminal popup chỉ chạy các shell có trong danh sách cho phép (PowerShell, pwsh, cmd, Git Bash; bash trên macOS/Linux).
+- Text editor chỉ đọc/ghi được file nằm trong các dự án, worktree và workspace đã thêm vào hub (đường dẫn được giải symlink rồi mới kiểm tra). File lớn hơn 2 MB hoặc file nhị phân không mở được.
 - File `~/.claude-hub/mcp/<id>.json` chép nguyên cấu hình MCP từ `~/.claude.json`, **kể cả token/mật khẩu** nếu có, giống file gốc. Trình duyệt không nhận được các giá trị này.
 - Shell và phiên Claude chạy với quyền của tài khoản đang dùng máy.
 
