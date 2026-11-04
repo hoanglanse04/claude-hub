@@ -1157,6 +1157,7 @@ function renderWorktreeView() {
     list.length ? h('div', { class: 'cards' }, list.map((s, i) => h('button', { class: `card ${s.status}`, onclick: () => selectSession(s.id) },
       h('div', { class: 'top' }, dot(s), h('span', { class: `status-text ${s.status}` }, STATUS[s.status])),
       h('div', { class: 'title' }, sessionLabel(s, i))))) : null,
+    innerReposSection(wt.path),
     historySection(wt.path),
     h('h3', {}, `File đã sửa (${wt.changes?.length || 0})`),
     fileList(wt.path, wt.changes),
@@ -1187,13 +1188,25 @@ function renderWorkspaceView() {
       h('div', { class: 'title' }, sessionLabel(s, i))))) : null,
     historySection(w.path),
     h('h3', {}, `Repo trong workspace (${children.length})`),
-    h('ul', { class: 'file-list ws-repos' }, children.map(p => {
-      const main = p.worktrees.find(wt => wt.main) || p.worktrees[0];
-      const changes = p.worktrees.reduce((n, wt) => n + (wt.changes?.length || 0), 0);
-      return h('li', { onclick: () => main && selectWorktree(main.path), title: p.path },
-        h('span', { class: 'code' }, changes || '·'),
-        h('span', {}, projectLabel(p), main ? h('span', { class: 'label-sub' }, ` ${branchLabel(main)}`) : null));
-    })));
+    repoList(children));
+}
+
+// repos kept inside this folder (a parent repo holding others, or a workspace): branch and changes of each,
+// click to open its own page with its git tree
+function repoList(children) {
+  return h('ul', { class: 'file-list ws-repos' }, children.map(p => {
+    const main = p.worktrees.find(wt => wt.main) || p.worktrees[0];
+    const changes = p.worktrees.reduce((n, wt) => n + (wt.changes?.length || 0), 0);
+    return h('li', { onclick: () => main && selectWorktree(main.path), title: p.path },
+      h('span', { class: 'code' }, changes || '·'),
+      h('span', {}, projectLabel(p), main ? h('span', { class: 'label-sub' }, ` ${branchLabel(main)}`) : null));
+  }));
+}
+
+function innerReposSection(path) {
+  const children = state.projects.filter(p => norm(p.path) !== norm(path) && isInside(p.path, path));
+  if (!children.length) return null;
+  return [h('h3', {}, `Repo con trong thư mục này (${children.length})`), repoList(children)];
 }
 
 function historySection(path) {

@@ -164,3 +164,28 @@ test('childEnv drops the markers of a parent Claude session but keeps the rest',
     delete process.env.CLAUDECODE;
   }
 });
+
+test('a repo that keeps other repos inside brings them in too, right after it', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-nested-'));
+  const config = require('../src/config');
+  const outer = path.join(root, 'mini');
+  for (const dir of [outer, path.join(outer, 'admin'), path.join(outer, 'deep', 'api')]) {
+    fs.mkdirSync(dir, { recursive: true });
+    execFileSync('git', ['init', '-q', dir]);
+  }
+  // a linked worktree inside the repo is not a separate project
+  fs.mkdirSync(path.join(outer, 'wt'));
+  fs.writeFileSync(path.join(outer, 'wt', '.git'), 'gitdir: ../.git/worktrees/wt\n');
+  fs.mkdirSync(path.join(outer, 'node_modules', 'x', '.git'), { recursive: true });
+
+  const cfg = { projects: [path.join(root, 'other')] };
+  const added = await config.addProjects(cfg, outer);
+  assert.deepEqual(added.map(p => path.relative(root, p)).sort(), ['mini', path.join('mini', 'admin'), path.join('mini', 'deep', 'api')].sort());
+
+  // an older config that only had the outer repo picks the inner ones up, placed under it
+  const old = { projects: [outer, path.join(root, 'zzz')] };
+  assert.equal(config.addNestedProjects(old).length, 2);
+  assert.deepEqual(old.projects.map(p => path.relative(root, p)), ['mini', path.join('mini', 'admin'), path.join('mini', 'deep', 'api'), 'zzz']);
+  assert.equal(config.addNestedProjects(old).length, 0);
+  fs.rmSync(root, { recursive: true, force: true });
+});

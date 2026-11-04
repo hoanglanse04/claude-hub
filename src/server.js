@@ -33,6 +33,7 @@ const POLL_MS = 4000;
 function createHub({ port }) {
   const token = crypto.randomBytes(24).toString('hex');
   const cfg = config.load();
+  if (config.addNestedProjects(cfg).length) config.save(cfg);
   const sessions = new SessionManager({ hookSettingsFile: path.join(config.HOME, 'hook-settings.json'), port, token });
   const shells = new ShellManager();
   let projects = [];

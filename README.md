@@ -5,6 +5,7 @@ Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code*
 ## Tính năng
 
 - **Nhiều phiên Claude song song**, nhóm theo dự án → nhánh/worktree. Trạng thái từng phiên (sẵn sàng, đang chạy, chờ bạn, xong, đã thoát) cập nhật trực tiếp qua hook của Claude Code.
+- **Repo con**: repo nằm bên trong một repo khác (sâu tới 2 cấp) được thêm thành dự án riêng, xếp ngay dưới repo cha, có nhánh và cây git riêng; dự án đã thêm từ trước tự được quét bổ sung khi hub khởi động.
 - **Workspace**: thêm một folder cha chứa nhiều repo thì folder đó thành workspace, mở được một phiên Claude ở folder cha để làm việc trên tất cả các repo con cùng lúc.
 - **Trang tổng quan**: phiên cần bạn xử lý luôn nằm đầu, kèm câu hỏi Claude đang chờ.
 - **Lịch sử phiên**: liệt kê các phiên Claude Code đã lưu của từng thư mục (cả phiên mở ngoài hub) và **mở lại** bằng `claude --resume`.

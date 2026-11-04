@@ -40,9 +40,43 @@ function save(cfg) {
 }
 
 // A repo path adds that repo; any other folder adds every repo found up to two levels below it.
+// folders that never hold a repo of their own but can be huge
+const SKIP_DIRS = new Set(['node_modules', 'bin', 'obj', 'dist', 'build', 'target', 'packages-cache']);
+
+// dir has its own repository: a .git folder, or a submodule's .git file. A linked worktree also has a
+// .git file, but it points into another repo's worktrees/ and is shown under that repo instead.
+function hasOwnGit(dir) {
+  const dotGit = path.join(dir, '.git');
+  try {
+    if (fs.statSync(dotGit).isDirectory()) return true;
+    return !/[\\/]worktrees[\\/]/.test(fs.readFileSync(dotGit, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+// Repos below a repo folder (not the folder itself), up to two levels down,
+// e.g. a parent repo that keeps ris_admin_v1 and ris_api_v1 as separate repos inside it.
+function nestedRepos(dir, depth = 2) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const found = [];
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name.startsWith('.') || SKIP_DIRS.has(e.name)) continue;
+    const child = path.join(dir, e.name);
+    if (hasOwnGit(child)) found.push(child);
+    else if (depth > 1) found.push(...nestedRepos(child, depth - 1));
+  }
+  return found;
+}
+
 async function findRepos(dir, depth = 2) {
   const top = await isRepo(dir);
-  if (top) return [top];
+  if (top) return [top, ...nestedRepos(top)];
   if (depth === 0) return [];
   let entries;
   try {
@@ -66,7 +100,30 @@ function samePath(a, b) {
 async function addProjects(cfg, dir) {
   const repos = await findRepos(path.resolve(dir));
   const added = repos.filter(r => !cfg.projects.some(p => samePath(p, r)));
-  cfg.projects.push(...added);
+  for (const repo of added) insertProject(cfg, repo);
+  return added;
+}
+
+// A repo inside another registered repo goes right after it (and its other children) in the sidebar.
+function insertProject(cfg, repo) {
+  const parent = cfg.projects.findLastIndex(p => !samePath(p, repo) && isInside(repo, p));
+  if (parent === -1) return cfg.projects.push(repo);
+  let at = parent + 1;
+  while (at < cfg.projects.length && isInside(cfg.projects[at], cfg.projects[parent])) at++;
+  cfg.projects.splice(at, 0, repo);
+}
+
+// Projects added before nested repos were picked up: register their inner repos too.
+function addNestedProjects(cfg) {
+  const added = [];
+  for (const repo of [...cfg.projects]) {
+    if (!fs.existsSync(repo)) continue;
+    for (const inner of nestedRepos(repo)) {
+      if (cfg.projects.some(p => samePath(p, inner))) continue;
+      insertProject(cfg, inner);
+      added.push(inner);
+    }
+  }
   return added;
 }
 
@@ -110,4 +167,4 @@ function childEnv(extra = {}) {
   return { ...env, ...extra };
 }
 
-module.exports = { HOME, load, save, findRepos, addProjects, removeProject, addWorkspace, removeWorkspace, isInside, samePath, aliasOf, setAlias, childEnv };
+module.exports = { HOME, load, save, findRepos, nestedRepos, addNestedProjects, addProjects, removeProject, addWorkspace, removeWorkspace, isInside, samePath, aliasOf, setAlias, childEnv };
