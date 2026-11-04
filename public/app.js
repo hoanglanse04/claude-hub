@@ -415,6 +415,25 @@ function send(msg) {
 }
 
 // ---------- terminals ----------
+// Windows Terminal style clipboard keys. Ctrl+C copies only while text is selected, otherwise it still
+// reaches the program (interrupt). Returning false for the paste keys skips xterm's own handling
+// (it would send ^V) and lets the browser fire a normal paste event, which xterm turns into input.
+function clipboardKeys(term) {
+  term.attachCustomKeyEventHandler(e => {
+    if (e.type !== 'keydown' || e.altKey) return true;
+    const key = e.key.toLowerCase();
+    const copy = (e.ctrlKey && key === 'c' && (e.shiftKey || term.hasSelection())) || (e.ctrlKey && !e.shiftKey && key === 'insert');
+    if (copy) {
+      if (term.hasSelection()) navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+      term.clearSelection();
+      e.preventDefault();
+      return false;
+    }
+    if ((e.ctrlKey && key === 'v') || (e.shiftKey && !e.ctrlKey && key === 'insert')) return false;
+    return true;
+  });
+}
+
 function ensureTerm(id) {
   let t = terms.get(id);
   if (t) return t;
@@ -430,6 +449,7 @@ function ensureTerm(id) {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(el);
+  clipboardKeys(term);
   term.onData(data => send({ type: 'input', id, data }));
   t = { term, fit, el };
   terms.set(id, t);
@@ -474,6 +494,7 @@ function ensureShellTerm(id) {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(el);
+  clipboardKeys(term);
   term.onData(data => send({ type: 'input', id, data }));
   t = { term, fit, el };
   shellTerms.set(id, t);

@@ -1,6 +1,6 @@
 {
   "name": "claude-hub",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Dashboard quản lý nhiều phiên Claude Code theo dự án / nhánh / worktree",
   "bin": {
     "claude-hub": "bin/claude-hub.js"

@@ -11,6 +11,7 @@ Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code*
 - **MCP theo từng phiên**: xem các MCP server phiên đang dùng, kiểm tra kết nối, bật/tắt từng MCP. Đổi MCP sẽ khởi động lại phiên và giữ nguyên cuộc trò chuyện.
 - **Skill/plugin theo từng phiên**: xem các plugin và skill phiên đang nạp, số token mô tả luôn nằm trong ngữ cảnh; tắt cả plugin, tắt skill riêng (`~/.claude/skills`, `.claude/skills`) hoặc chặn lẻ từng skill trong plugin. Đổi xong phiên khởi động lại và giữ nguyên cuộc trò chuyện.
 - **Cuộn xem lại toàn bộ phiên**: hub mở Claude ở giao diện cổ điển (chỉ cho phiên mở từ hub), bộ nhớ cuộn tới 1 triệu dòng; RAM chỉ tăng theo số dòng thật sự in ra (khoảng 1,5 KB/dòng). Đổi trong Cài đặt → Phiên Claude.
+- **Phím sao chép/dán** như Windows Terminal: bôi đen rồi Ctrl+C để sao chép (không bôi đen thì Ctrl+C vẫn là ngắt), Ctrl+Shift+C luôn sao chép, Ctrl+V / Ctrl+Shift+V / Shift+Insert để dán.
 - **Terminal popup**: mở PowerShell, cmd hoặc Git Bash ngay tại thư mục của nhánh/phiên; nhiều tab, kéo thả, đổi kích thước, thu nhỏ.
 - **Git**: tạo worktree/nhánh mới, xem file đã sửa và diff từng file, mở lazygit hoặc thư mục.
 - **Text editor nhẹ** (CodeMirror): cây thư mục của dự án/workspace, nhiều tab, tô màu cú pháp (C#, JS/TS/JSX, JSON, HTML/XML, CSS/SCSS, SQL, Markdown, YAML, Python, PowerShell, shell…), tìm/thay thế, Ctrl+S để lưu. Giữ nguyên BOM và kiểu xuống dòng CRLF/LF; cảnh báo trước khi ghi đè file đã bị sửa bên ngoài (ví dụ Claude vừa sửa). Không có IntelliSense/debug — dùng VS Code cho việc đó.
