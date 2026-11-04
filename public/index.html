@@ -36,6 +36,7 @@
       <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5"/></symbol>
       <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></symbol>
       <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><path d="M3 4h18v16H3z"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5L5 20"/></symbol>
       <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2 12h5l2-6 4 12 2-6h7"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 20h16"/></symbol>
@@ -89,6 +90,7 @@
             <button class="btn ghost" data-act="shell" title="Mở terminal tại thư mục của phiên"><svg class="ico"><use href="#i-terminal"/></svg>Terminal</button>
             <button class="btn ghost" data-act="mcp"><svg class="ico"><use href="#i-plug"/></svg><span class="mcp-label">MCP</span></button>
             <button class="btn ghost" data-act="skills" title="Bật/tắt plugin và skill cho phiên này"><svg class="ico"><use href="#i-spark"/></svg><span class="skill-label">Skill</span></button>
+            <button class="btn ghost" data-act="image" title="Gửi ảnh cho Claude (hoặc dán Ctrl+V / kéo thả ảnh vào khung chat)"><svg class="ico"><use href="#i-image"/></svg>Ảnh</button>
             <button class="btn ghost" data-act="editor" title="Xem và sửa file trong thư mục của phiên"><svg class="ico"><use href="#i-edit"/></svg>Tệp</button>
             <button class="btn ghost" data-act="files"><svg class="ico"><use href="#i-file"/></svg><span class="files-label">File đã sửa</span></button>
             <button class="btn ghost" data-act="lazygit"><svg class="ico"><use href="#i-git"/></svg>lazygit</button>
@@ -155,6 +157,15 @@
               <li><b>Dừng</b> dừng tiến trình Claude. <b>Đóng phiên</b> dừng và bỏ phiên khỏi hub; cuộc trò chuyện vẫn còn trong lịch sử.</li>
             </ul>
             <p>Kéo chuột lên trong terminal để xem lại toàn bộ phiên. Hub mở Claude ở giao diện <b>cổ điển</b> nên cuộn được hết (tối đa 1 triệu dòng); đổi trong <b>Cài đặt → Phiên Claude</b>. Nếu chọn Fullscreen, Claude chỉ vẽ một đoạn gần nhất, bấm <kbd>Ctrl</kbd>+<kbd>O</kbd> để xem toàn bộ.</p>
+          </section>
+          <section id="g-image">
+            <h2>Gửi ảnh cho Claude</h2>
+            <ul>
+              <li><b>Dán ảnh:</b> chụp màn hình (<kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>) hoặc sao chép một ảnh, bấm vào khung phiên rồi <kbd>Ctrl</kbd>+<kbd>V</kbd>. Ô nhập của Claude hiện <code>[Image #1]</code>; gõ thêm câu hỏi rồi Enter.</li>
+              <li><b>Kéo thả</b> file ảnh từ Explorer vào khung phiên, hoặc bấm nút <b>Ảnh</b> trên thanh phiên để chọn một hay nhiều file.</li>
+              <li>Nhận PNG, JPG, GIF, WebP, BMP, tối đa 20 MB mỗi ảnh. <kbd>Alt</kbd>+<kbd>V</kbd> (phím dán ảnh gốc của Claude Code) cũng dùng được.</li>
+            </ul>
+            <p class="guide-note">Khi kéo thả hoặc chọn file, hub đưa ảnh vào clipboard của Windows để Claude đọc, nên nội dung clipboard trước đó bị thay bằng ảnh này.</p>
           </section>
           <section id="g-copy">
             <h2>Sao chép và dán</h2>
@@ -235,7 +246,7 @@
               <li><b>MCP báo lỗi</b>: thường do dịch vụ phía sau (ví dụ database) chưa chạy, hoặc cấu hình trong <code>~/.claude.json</code> sai.</li>
             </ul>
           </section>
-          <p class="guide-credit">Claude Hub v0.4.0 · Tác giả: <b>Hoàng Lân Dev</b></p>
+          <p class="guide-credit">Claude Hub v0.5.0 · Tác giả: <b>Hoàng Lân Dev</b></p>
         </article>
       </div>
     </div>

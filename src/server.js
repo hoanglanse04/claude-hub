@@ -14,6 +14,7 @@ const { ShellManager } = require('./shells');
 const { layout } = require('./graph');
 const files = require('./files');
 const { pickFolder } = require('./picker');
+const clipboard = require('./clipboard');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MODULES = path.join(__dirname, '..', 'node_modules');
@@ -117,7 +118,7 @@ function createHub({ port }) {
       res.end(JSON.stringify(data));
     };
     const route = `${req.method} ${url.pathname}`;
-    const sessionMatch = url.pathname.match(/^\/api\/sessions\/([\w-]+)(?:\/(kill|read|restart|name))?$/);
+    const sessionMatch = url.pathname.match(/^\/api\/sessions\/([\w-]+)(?:\/(kill|read|restart|name|image))?$/);
     // null keeps Claude Code's own MCP loading; a list must only name servers configured for cwd
     const mcpSelection = (cwd, list) => {
       if (list == null) return null;
@@ -263,6 +264,14 @@ function createHub({ port }) {
         if ('skills' in body) change.skills = skills.validate(body.skills);
         return send(200, sessions.restart(id, change));
       }
+      if (req.method === 'POST' && action === 'image') {
+        const s = sessions.sessions.get(id);
+        if (!s) return send(404, { error: 'Không tìm thấy phiên' });
+        if (s.status === 'exited') return send(409, { error: 'Phiên đã thoát' });
+        await clipboard.setClipboardImage(Buffer.from(String(body.data || ''), 'base64'), body.type);
+        sessions.write(id, clipboard.IMAGE_PASTE_KEY); // Claude reads the image back from the clipboard
+        return send(200, { ok: true });
+      }
       if (req.method === 'POST' && action === 'name') sessions.rename(id, body.name);
       else if (req.method === 'POST' && action === 'kill') sessions.kill(id);
       else if (req.method === 'POST' && action === 'read') sessions.markRead(id);
@@ -285,9 +294,20 @@ function createHub({ port }) {
         res.writeHead(401);
         return res.end('Unauthorized');
       }
+      // largest legit body is an image upload (20 MB, base64 in JSON)
+      const limit = clipboard.MAX_IMAGE * 1.4 + 4096;
       let raw = '';
-      req.on('data', chunk => { raw += chunk; });
+      let tooBig = false;
+      req.on('data', chunk => {
+        if (tooBig) return;
+        raw += chunk;
+        if (raw.length > limit) { tooBig = true; raw = ''; }
+      });
       req.on('end', () => {
+        if (tooBig) {
+          res.writeHead(413, { 'content-type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Dữ liệu gửi lên quá lớn' }));
+        }
         let body = {};
         try { body = raw ? JSON.parse(raw) : {}; } catch { /* empty body */ }
         api(req, res, url, body).catch(err => {

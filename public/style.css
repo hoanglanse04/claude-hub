@@ -79,6 +79,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn.ghost { --fill: var(--bg); }
 .btn.primary { --line: var(--accent); --fill: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .btn.primary:hover { --fill: color-mix(in srgb, var(--accent) 80%, #fff); --line: color-mix(in srgb, var(--accent) 80%, #fff); color: var(--accent-ink); }
+.term.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.term.drop::after { content: "Thả ảnh để gửi cho Claude"; position: absolute; inset: auto 0 18px; text-align: center; color: var(--accent); font-family: var(--mono); font-size: 13px; pointer-events: none; z-index: 5; }
 .btn.on { --line: var(--accent); --fill: color-mix(in srgb, var(--accent) 16%, var(--bg)); color: var(--accent); }
 .btn.on .ico { color: var(--accent); }
 .btn.danger:hover { --line: var(--danger); color: var(--danger); }
@@ -336,7 +338,7 @@ body.no-anim .dlg-backdrop, body.no-anim .dlg { animation: none; }
 .skill-list input:disabled + .mcp-name { color: var(--muted); }
 .skill-tok { color: var(--muted); font-family: var(--mono); font-size: 10.5px; }
 .mcp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-.btn[disabled] { opacity: .4; cursor: not-allowed; pointer-events: none; }
+.btn[disabled] { opacity: .4; cursor: not-allowed; pointer-events: none; z-index: 5; }
 
 /* ---------- tên tùy đặt ---------- */
 .project-head .name-hint { margin-left: 8px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; }
@@ -445,7 +447,7 @@ body.no-anim .dlg-backdrop, body.no-anim .dlg { animation: none; }
 .et-tab .x .ico { width: 11px; height: 11px; }
 .editor-cm { flex: 1; min-height: 0; }
 .editor-cm .CodeMirror { height: 100%; font-family: "Cascadia Mono", Consolas, monospace; font-size: 13.5px; line-height: 1.45; }
-.editor-empty { position: absolute; inset: 36px 0 26px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-family: var(--mono); font-size: 12.5px; pointer-events: none; }
+.editor-empty { position: absolute; inset: 36px 0 26px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-family: var(--mono); font-size: 12.5px; pointer-events: none; z-index: 5; }
 .editor-status { display: flex; align-items: center; gap: 16px; min-height: 26px; padding: 0 12px; border-top: 1px solid var(--border); background: var(--panel); color: var(--muted); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
 .editor-status .es-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .editor-status .es-dirty { color: var(--accent); }

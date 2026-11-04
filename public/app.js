@@ -527,6 +527,53 @@ function clipboardKeys(term) {
   });
 }
 
+// ---------- images into a Claude session ----------
+// Claude Code attaches an image when it gets its paste key (Alt+V on Windows, Ctrl+V elsewhere) and finds an
+// image on the OS clipboard. Pasting a screenshot: the clipboard already holds it, so just send that key.
+// Dropping or picking a file: the server puts the file on the clipboard first, then sends the key.
+const IMAGE_PASTE_KEY = /^Win/.test(navigator.platform) ? '\x1bv' : '\x16';
+const isImage = f => /^image\/(png|jpeg|gif|webp|bmp)$/.test(f.type);
+
+function imagePaste(term, id) {
+  term.textarea?.addEventListener('paste', e => {
+    const data = e.clipboardData;
+    const hasImage = [...(data?.items || [])].some(it => it.kind === 'file' && it.type.startsWith('image/'));
+    if (!hasImage || data.getData('text/plain')) return; // plain text paste stays as it was
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    send({ type: 'input', id, data: IMAGE_PASTE_KEY });
+  }, true);
+}
+
+async function sendImageFiles(id, list) {
+  const images = [...list].filter(isImage);
+  if (!images.length) return showMessage('Chỉ gửi được ảnh PNG, JPG, GIF, WebP hoặc BMP.', { title: 'Gửi ảnh', error: true });
+  for (const file of images) {
+    if (file.size > 20 * 1024 * 1024) { showMessage(`"${file.name}" lớn hơn 20 MB.`, { title: 'Gửi ảnh', error: true }); continue; }
+    const data = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(',')[1]);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+    try { await api('POST', `/api/sessions/${id}/image`, { type: file.type, data }); } catch { return; }
+    await new Promise(r => setTimeout(r, 400)); // give Claude time to read the clipboard before the next one
+  }
+  terms.get(id)?.term.focus();
+}
+
+function imageDrop(el, id) {
+  const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  el.addEventListener('dragover', e => { if (!hasFiles(e)) return; e.preventDefault(); el.classList.add('drop'); });
+  el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) el.classList.remove('drop'); });
+  el.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    el.classList.remove('drop');
+    sendImageFiles(id, e.dataTransfer.files);
+  });
+}
+
 function ensureTerm(id) {
   let t = terms.get(id);
   if (t) return t;
@@ -543,6 +590,8 @@ function ensureTerm(id) {
   term.loadAddon(fit);
   term.open(el);
   clipboardKeys(term);
+  imagePaste(term, id);
+  imageDrop(el, id);
   term.onData(data => send({ type: 'input', id, data }));
   t = { term, fit, el };
   terms.set(id, t);
@@ -1792,6 +1841,10 @@ document.querySelector('.session-head .actions').onclick = async e => {
     state.filesOpen = !state.filesOpen;
     render();
     requestAnimationFrame(fitSelected);
+  } else if (act === 'image') {
+    const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,image/bmp', multiple: true });
+    input.onchange = () => input.files.length && sendImageFiles(s.id, input.files);
+    input.click();
   } else if (act === 'editor') {
     await openEditor(s.cwd);
   } else if (act === 'shell') {
