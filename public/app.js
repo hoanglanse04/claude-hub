@@ -1310,6 +1310,12 @@ function renderSessionView() {
   document.querySelector('[data-act="skills"] .skill-label').textContent = skillAvail ? `Skill (${skillTotals(skillAvail, activeSkills(s, skillAvail)).count})` : 'Skill';
   if (!skillAvail) loadSkills(s.cwd).catch(() => {});
   document.querySelector('[data-act="kill"]').hidden = s.status === 'exited';
+  // panels toggled from the bar: the open one is outlined so it's clear which button closes it
+  for (const [act, open] of [['files', state.filesOpen], ['mcp', state.mcpOpen], ['skills', state.skillsOpen]]) {
+    const btn = document.querySelector(`.session-head [data-act="${act}"]`);
+    btn.classList.toggle('on', open);
+    btn.setAttribute('aria-pressed', String(open));
+  }
 }
 
 function render() {
