@@ -530,7 +530,7 @@ function clipboardKeys(term) {
 // ---------- images into a Claude session ----------
 // Claude Code attaches an image when it gets its paste key (Alt+V on Windows, Ctrl+V elsewhere) and finds an
 // image on the OS clipboard. Pasting a screenshot: the clipboard already holds it, so just send that key.
-// Dropping or picking a file: the server puts the file on the clipboard first, then sends the key.
+// Dropping a file: the server puts the file on the clipboard first, then sends the key.
 const IMAGE_PASTE_KEY = /^Win/.test(navigator.platform) ? '\x1bv' : '\x16';
 const isImage = f => /^image\/(png|jpeg|gif|webp|bmp)$/.test(f.type);
 
@@ -1854,10 +1854,6 @@ document.querySelector('.session-head .actions').onclick = async e => {
     state.filesOpen = !state.filesOpen;
     render();
     requestAnimationFrame(fitSelected);
-  } else if (act === 'image') {
-    const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,image/bmp', multiple: true });
-    input.onchange = () => input.files.length && sendImageFiles(s.id, input.files);
-    input.click();
   } else if (act === 'editor') {
     await openEditor(s.cwd);
   } else if (act === 'shell') {
