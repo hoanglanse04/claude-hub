@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const pty = require('@lydell/node-pty');
+const { childEnv } = require('./config');
 
 const MAX_BUFFER = 1024 * 1024;
 
@@ -37,7 +38,7 @@ class ShellManager extends EventEmitter {
   create({ cwd, kind }) {
     const def = this.catalog[kind] || Object.values(this.catalog)[0];
     const id = `sh-${crypto.randomUUID().slice(0, 8)}`;
-    const proc = pty.spawn(def.file, def.args, { name: 'xterm-256color', cols: 100, rows: 28, cwd, env: process.env });
+    const proc = pty.spawn(def.file, def.args, { name: 'xterm-256color', cols: 100, rows: 28, cwd, env: childEnv() });
     const s = { id, cwd, kind: kind in this.catalog ? kind : Object.keys(this.catalog)[0], label: def.label, status: 'running', startedAt: Date.now(), proc, buffer: '' };
     this.shells.set(id, s);
     proc.onData(data => {

@@ -148,3 +148,19 @@ test('a folder holding repos becomes a workspace; a repo or its subfolder does n
   assert.deepEqual(cfg.workspaces, []);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('childEnv drops the markers of a parent Claude session but keeps the rest', () => {
+  const { childEnv } = require('../src/config');
+  process.env.CLAUDE_CODE_CHILD_SESSION = '1';
+  process.env.CLAUDECODE = '1';
+  try {
+    const env = childEnv({ CLAUDE_HUB_SID: 'x' });
+    assert.equal(env.CLAUDE_CODE_CHILD_SESSION, undefined);
+    assert.equal(env.CLAUDECODE, undefined);
+    assert.equal(env.CLAUDE_HUB_SID, 'x');
+    assert.equal(env.PATH ?? env.Path, process.env.PATH ?? process.env.Path);
+  } finally {
+    delete process.env.CLAUDE_CODE_CHILD_SESSION;
+    delete process.env.CLAUDECODE;
+  }
+});

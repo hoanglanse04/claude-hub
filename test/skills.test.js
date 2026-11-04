@@ -102,3 +102,29 @@ test('changing skills restarts with a per-session settings file and keeps the MC
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('a tui override goes into the session settings and survives a restart', () => {
+  const pty = require('@lydell/node-pty');
+  const spawned = [];
+  const realSpawn = pty.spawn;
+  pty.spawn = (cmd, args) => {
+    const proc = { args, kill() {}, onData() {}, onExit() {}, write() {}, resize() {} };
+    spawned.push(proc);
+    return proc;
+  };
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-tui-'));
+  try {
+    const { SessionManager } = require('../src/sessions');
+    const m = new SessionManager({ hookSettingsFile: path.join(home, 'hook-settings.json'), port: 1, token: 't' });
+    const s = m.create({ cwd: home, tui: 'default' });
+    const read = proc => JSON.parse(fs.readFileSync(proc.args[proc.args.indexOf('--settings') + 1], 'utf8'));
+    assert.equal(read(spawned[0]).tui, 'default');
+    assert.ok(read(spawned[0]).hooks.Stop);
+    m.restart(s.id, { mcp: [] });
+    assert.equal(read(spawned[1]).tui, 'default');
+    m.remove(s.id);
+  } finally {
+    pty.spawn = realSpawn;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

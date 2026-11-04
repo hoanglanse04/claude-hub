@@ -236,7 +236,8 @@ function createHub({ port }) {
       if (!body.cwd || !fs.existsSync(body.cwd)) return send(400, { error: 'Thư mục không tồn tại' });
       if (body.resume && !history.ID_RE.test(body.resume)) return send(400, { error: 'Mã phiên không hợp lệ' });
       const args = body.resume ? ['--resume', body.resume] : body.continue ? ['--continue'] : [];
-      return send(200, sessions.create({ cwd: body.cwd, args, mcp: mcpSelection(body.cwd, body.mcp) }));
+      const tui = ['default', 'fullscreen'].includes(body.tui) ? body.tui : null;
+      return send(200, sessions.create({ cwd: body.cwd, args, mcp: mcpSelection(body.cwd, body.mcp), tui }));
     }
     if (route === 'POST /api/shells') {
       if (!body.cwd || !fs.existsSync(body.cwd)) return send(400, { error: 'Thư mục không tồn tại' });

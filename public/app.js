@@ -35,7 +35,11 @@ const DEFAULTS = {
   text: '#e8e6e1', muted: '#7d7a73', running: '#13c2c2', waiting: '#ff7a45', done: '#52c41a', danger: '#ff4d4f',
   cut: 8, grid: true, sidebarW: 340, fontSize: 14, mono: 'Cascadia Mono', termFont: 'Cascadia Mono', termSize: 14,
   sound: true, anim: true, brand: '', css: '', shell: 'powershell',
+  claudeTui: 'default', scrollback: 'max',
 };
+// xterm needs a number; "max" is effectively no limit (RAM grows only with lines actually printed)
+const SCROLLBACK = { 10000: 10000, 100000: 100000, max: 1000000 };
+const scrollbackLines = () => SCROLLBACK[settings.scrollback] || SCROLLBACK.max;
 const PRESETS = [
   { name: 'HUD vàng', accent: '#faad14', running: '#13c2c2' },
   { name: 'Cyan', accent: '#13c2c2', running: '#faad14' },
@@ -95,6 +99,8 @@ function applySettings() {
   if (settings.brand) brand.textContent = settings.brand;
   else brand.replaceChildren('CLAUDE', h('b', {}, '//'), 'HUB');
   document.getElementById('user-css').textContent = settings.css;
+  // only Claude panes follow the setting; changing it re-allocates the buffer, so skip when unchanged
+  for (const t of terms.values()) if (t.term.options.scrollback !== scrollbackLines()) t.term.options.scrollback = scrollbackLines();
   for (const t of [...terms.values(), ...shellTerms.values()]) {
     t.term.options.fontSize = settings.termSize;
     t.term.options.fontFamily = `"${settings.termFont}", Consolas, monospace`;
@@ -164,6 +170,18 @@ function renderSettings() {
             (state.shellKinds.length ? state.shellKinds : [{ id: 'powershell', label: 'PowerShell' }])
               .map(k => h('option', { value: k.id, selected: k.id === settings.shell }, k.label)))),
         h('p', { class: 'set-hint' }, 'Dùng cho nút Terminal. Trong popup vẫn chọn được shell khác cho từng tab mới.')),
+      group('Phiên Claude',
+        h('div', { class: 'set-row' }, h('label', {}, 'Giao diện Claude'),
+          h('select', { onchange: e => setSetting('claudeTui', e.target.value) },
+            [['default', 'Cổ điển: kéo lên xem toàn bộ'], ['fullscreen', 'Fullscreen: Claude tự cuộn']]
+              .map(([v, label]) => h('option', { value: v, selected: v === settings.claudeTui }, label)))),
+        h('div', { class: 'set-row' }, h('label', {}, 'Bộ nhớ cuộn'),
+          h('select', { onchange: e => { setSetting('scrollback', e.target.value); applySettings(); } },
+            [['10000', '10.000 dòng'], ['100000', '100.000 dòng'], ['max', 'Không giới hạn (1 triệu dòng)']]
+              .map(([v, label]) => h('option', { value: v, selected: v === settings.scrollback }, label)))),
+        h('p', { class: 'set-hint' }, 'Giao diện chỉ áp dụng cho phiên mở từ hub, từ lần mở hoặc khởi động lại sau; Claude ở VS Code/CLI giữ nguyên. ',
+          'Ở chế độ Fullscreen, Claude chỉ vẽ một đoạn gần nhất; bấm Ctrl+O trong phiên để xem toàn bộ. ',
+          'Bộ nhớ cuộn chỉ tốn RAM theo số dòng thật sự in ra, khoảng 1,5 KB mỗi dòng (10.000 dòng ≈ 15 MB).')),
       group('Hành vi', toggle('sound', 'Âm thanh khi phiên xong / chờ bạn'), toggle('anim', 'Hiệu ứng nhấp nháy'),
         h('div', { class: 'set-row' }, h('label', {}, 'Tên hiển thị'),
           h('input', { type: 'text', class: 'wide', value: settings.brand, placeholder: 'CLAUDE//HUB', oninput: e => setSetting('brand', e.target.value) }))),
@@ -406,7 +424,7 @@ function ensureTerm(id) {
     fontFamily: `"${settings.termFont}", Consolas, monospace`,
     fontSize: settings.termSize,
     cursorBlink: true,
-    scrollback: 10000,
+    scrollback: scrollbackLines(),
     theme: termTheme(),
   });
   const fit = new FitAddon.FitAddon();
@@ -634,7 +652,7 @@ async function loadHistory(path) {
 }
 
 async function startSession(cwd, opts = {}) {
-  const s = await api('POST', '/api/sessions', { cwd, continue: !!opts.continue, resume: opts.resume });
+  const s = await api('POST', '/api/sessions', { cwd, continue: !!opts.continue, resume: opts.resume, tui: settings.claudeTui });
   ensureTerm(s.id);
   if (!state.sessions.some(x => x.id === s.id)) state.sessions.push(s);
   selectSession(s.id);

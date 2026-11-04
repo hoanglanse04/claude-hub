@@ -96,4 +96,18 @@ function isInside(child, dir) {
   return !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
-module.exports = { HOME, load, save, findRepos, addProjects, removeProject, addWorkspace, removeWorkspace, isInside, samePath, aliasOf, setAlias };
+// Markers Claude Code sets for its own child processes. If the hub was started from inside a Claude
+// session, passing them on makes every hub session think it is a sub-session (and stop saving transcripts).
+const PARENT_SESSION_VARS = [
+  'CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_PID', 'CLAUDE_EFFORT',
+  'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_EXECPATH', 'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN',
+];
+
+function childEnv(extra = {}) {
+  const env = { ...process.env };
+  for (const k of PARENT_SESSION_VARS) delete env[k];
+  return { ...env, ...extra };
+}
+
+module.exports = { HOME, load, save, findRepos, addProjects, removeProject, addWorkspace, removeWorkspace, isInside, samePath, aliasOf, setAlias, childEnv };

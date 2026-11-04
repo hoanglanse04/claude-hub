@@ -8,8 +8,10 @@ const { nextStatus, shouldNotify } = require('./status');
 const mcp = require('./mcp');
 const history = require('./history');
 const skills = require('./skills');
+const { childEnv } = require('./config');
 
-const MAX_BUFFER = 2 * 1024 * 1024;
+// output kept for replay when the page reloads; the browser terminal itself keeps far more
+const MAX_BUFFER = 16 * 1024 * 1024;
 
 function claudeCommand() {
   if (process.env.CLAUDE_HUB_CLAUDE) return process.env.CLAUDE_HUB_CLAUDE;
@@ -53,11 +55,12 @@ class SessionManager extends EventEmitter {
 
   // mcp: null = whatever Claude Code would load in cwd; an array = only those servers (--strict-mcp-config)
   // skills: null = Claude Code defaults; { plugins, off } = see skills.validate
-  create({ cwd, args = [], mcp = null, skills: skillSel = null }) {
+  // tui: null = the user's own Claude Code setting; 'default' | 'fullscreen' = override for this session
+  create({ cwd, args = [], mcp = null, skills: skillSel = null, tui = null }) {
     const id = crypto.randomUUID().slice(0, 8);
     const s = {
       id, cwd, status: 'idle', title: '', lastMessage: '', unread: false, startedAt: Date.now(), updatedAt: Date.now(),
-      baseArgs: args, mcp, skills: skillSel, mcpUsed: {}, claudeSessionId: null, proc: null, buffer: '',
+      baseArgs: args, mcp, skills: skillSel, tui, mcpUsed: {}, claudeSessionId: null, proc: null, buffer: '',
     };
     this.sessions.set(id, s);
     this.spawn(s, args);
@@ -73,10 +76,11 @@ class SessionManager extends EventEmitter {
     return path.join(path.dirname(this.hookSettingsFile), 'settings', `${id}.json`);
   }
 
-  // the shared hook file, or a per-session copy that also carries the chosen plugins/skills
+  // the shared hook file, or a per-session copy that also carries the chosen plugins/skills and renderer
   settingsFor(s) {
-    if (!s.skills) return this.hookSettingsFile;
-    return writeHookSettings(this.settingsFile(s.id), skills.sessionSettings(hookSettings(), s.skills));
+    if (!s.skills && !s.tui) return this.hookSettingsFile;
+    const settings = skills.sessionSettings(hookSettings(), s.skills);
+    return writeHookSettings(this.settingsFile(s.id), s.tui ? { ...settings, tui: s.tui } : settings);
   }
 
   spawn(s, args) {
@@ -86,7 +90,7 @@ class SessionManager extends EventEmitter {
       cols: 120,
       rows: 32,
       cwd: s.cwd,
-      env: { ...process.env, CLAUDE_HUB_SID: s.id, CLAUDE_HUB_PORT: String(this.port), CLAUDE_HUB_TOKEN: this.token },
+      env: childEnv({ CLAUDE_HUB_SID: s.id, CLAUDE_HUB_PORT: String(this.port), CLAUDE_HUB_TOKEN: this.token }),
     });
     s.proc = proc;
     // after a restart the old process still reports for a moment; ignore it
