@@ -85,7 +85,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---------- layout ---------- */
 .layout { display: flex; height: calc(100% - 52px); }
-.sidebar { width: var(--sidebar-w); flex-shrink: 0; overflow-y: auto; background: var(--bg); border-right: 1px solid var(--border); padding: 10px 10px 24px; }
+.sidebar { width: var(--sidebar-w); flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg); border-right: 1px solid var(--border); }
+.sidebar .tree { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 10px 24px; }
+.sidebar-foot { padding: 8px 10px; border-top: 1px solid var(--border); }
+.sidebar-foot .btn { width: 100%; justify-content: flex-start; }
+.guide { flex: 1; min-height: 0; display: flex; }
+.guide-toc { width: 210px; flex-shrink: 0; overflow-y: auto; padding: 12px 8px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.guide-toc a { padding: 6px 10px; color: var(--muted); text-decoration: none; font-family: var(--mono); font-size: 12px; border-left: 2px solid transparent; }
+.guide-toc a:hover { color: var(--text); background: var(--panel-2); }
+.guide-toc a.active { color: var(--accent); border-left-color: var(--accent); background: var(--panel-2); }
+.guide-body { flex: 1; min-width: 0; overflow-y: auto; padding: 6px 28px 40px; line-height: 1.6; font-size: 13.5px; }
+.guide-body section { padding-top: 14px; }
+.guide-body h2 { margin: 10px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); color: var(--accent); font-family: var(--mono); font-size: 13px; text-transform: uppercase; letter-spacing: .1em; }
+.guide-body ul, .guide-body ol { margin: 6px 0; padding-left: 20px; }
+.guide-body li { margin: 4px 0; }
+.guide-body code, .guide-body kbd { padding: 1px 5px; background: var(--panel-2); border: 1px solid var(--border); font-family: var(--mono); font-size: 12px; }
+.guide-note { margin: 10px 0; padding: 8px 12px; border-left: 2px solid var(--accent); background: var(--panel-2); color: var(--muted); }
+.guide-credit { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+@media (max-width: 720px) { .guide-toc { display: none; } .guide-body { padding: 6px 16px 32px; } }
 .main {
   flex: 1; min-width: 0; position: relative;
   background-color: var(--bg);
@@ -194,12 +211,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---------- session view ---------- */
 .session-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
-.session-head { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--bg); border-bottom: 1px solid var(--border); }
-.crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; font-family: var(--mono); font-size: 12.5px; }
+.session-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 14px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.crumbs { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; font-family: var(--mono); font-size: 12.5px; }
 .crumbs strong { color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
 .crumbs .sep { color: var(--border-2); }
 .crumbs .sub { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
-.actions { display: flex; gap: 6px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .session-body { flex: 1; display: flex; min-height: 0; }
 /* khung terminal có 4 góc ngoặc kiểu HUD */
 .terminals {
@@ -283,6 +300,18 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .mcp-health.ok { color: var(--done); }
 .mcp-health.bad { color: var(--danger); }
 .mcp-health.pending { color: var(--waiting); }
+.mcp-list details > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.mcp-list details > summary::-webkit-details-marker { display: none; }
+.mcp-list details > summary::after { content: "▸"; color: var(--muted); font-size: 11px; }
+.mcp-list details[open] > summary::after { content: "▾"; }
+.mcp-list summary input[type=checkbox] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+.mcp-list li > label + .mcp-meta { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.skill-list { list-style: none; margin: 8px 0 0 23px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mcp-list .skill-list li { padding: 3px 0; border: 0; background: none; }
+.skill-list .skill-row label { gap: 6px; }
+.skill-list .mcp-name { font-weight: 400; font-size: 12px; }
+.skill-list input:disabled + .mcp-name { color: var(--muted); }
+.skill-tok { color: var(--muted); font-family: var(--mono); font-size: 10.5px; }
 .mcp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .btn[disabled] { opacity: .4; cursor: not-allowed; pointer-events: none; }
 

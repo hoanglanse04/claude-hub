@@ -7,6 +7,7 @@ const pty = require('@lydell/node-pty');
 const { nextStatus, shouldNotify } = require('./status');
 const mcp = require('./mcp');
 const history = require('./history');
+const skills = require('./skills');
 
 const MAX_BUFFER = 2 * 1024 * 1024;
 
@@ -18,11 +19,11 @@ function claudeCommand() {
 }
 
 // Settings file passed with --settings so only hub-launched sessions report back.
-function writeHookSettings(file) {
+function hookSettings() {
   const node = process.execPath.replace(/\\/g, '/');
   const report = path.join(__dirname, '..', 'hooks', 'report.js').replace(/\\/g, '/');
   const hook = event => [{ hooks: [{ type: 'command', command: `"${node}" "${report}" ${event}`, timeout: 5 }] }];
-  const settings = {
+  return {
     hooks: {
       SessionStart: hook('SessionStart'), // gives us the Claude session id before the first prompt
       UserPromptSubmit: hook('UserPromptSubmit'),
@@ -32,8 +33,12 @@ function writeHookSettings(file) {
       Stop: hook('Stop'),
     },
   };
+}
+
+function writeHookSettings(file, settings = hookSettings()) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+  return file;
 }
 
 class SessionManager extends EventEmitter {
@@ -47,11 +52,12 @@ class SessionManager extends EventEmitter {
   }
 
   // mcp: null = whatever Claude Code would load in cwd; an array = only those servers (--strict-mcp-config)
-  create({ cwd, args = [], mcp = null }) {
+  // skills: null = Claude Code defaults; { plugins, off } = see skills.validate
+  create({ cwd, args = [], mcp = null, skills: skillSel = null }) {
     const id = crypto.randomUUID().slice(0, 8);
     const s = {
       id, cwd, status: 'idle', title: '', lastMessage: '', unread: false, startedAt: Date.now(), updatedAt: Date.now(),
-      baseArgs: args, mcp, mcpUsed: {}, claudeSessionId: null, proc: null, buffer: '',
+      baseArgs: args, mcp, skills: skillSel, mcpUsed: {}, claudeSessionId: null, proc: null, buffer: '',
     };
     this.sessions.set(id, s);
     this.spawn(s, args);
@@ -63,9 +69,19 @@ class SessionManager extends EventEmitter {
     return path.join(path.dirname(this.hookSettingsFile), 'mcp', `${id}.json`);
   }
 
+  settingsFile(id) {
+    return path.join(path.dirname(this.hookSettingsFile), 'settings', `${id}.json`);
+  }
+
+  // the shared hook file, or a per-session copy that also carries the chosen plugins/skills
+  settingsFor(s) {
+    if (!s.skills) return this.hookSettingsFile;
+    return writeHookSettings(this.settingsFile(s.id), skills.sessionSettings(hookSettings(), s.skills));
+  }
+
   spawn(s, args) {
     const extra = s.mcp ? ['--mcp-config', mcp.writeSessionConfig(this.mcpConfigFile(s.id), s.cwd, s.mcp), '--strict-mcp-config'] : [];
-    const proc = pty.spawn(claudeCommand(), ['--settings', this.hookSettingsFile, ...extra, ...args], {
+    const proc = pty.spawn(claudeCommand(), ['--settings', this.settingsFor(s), ...extra, ...args], {
       name: 'xterm-256color',
       cols: 120,
       rows: 32,
@@ -87,19 +103,24 @@ class SessionManager extends EventEmitter {
     });
   }
 
-  // Claude Code reads MCP servers only at startup, so changing them means relaunching;
+  // Claude Code reads MCP servers, plugins and skills only at startup, so changing them means relaunching;
   // --resume keeps the same conversation when we already know its id.
-  restart(id, { mcp: names = null } = {}) {
+  // Only the keys present in `change` are replaced: { mcp } from the MCP panel, { skills } from the skill panel.
+  restart(id, change = {}) {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Không tìm thấy phiên');
     const old = s.proc;
     const wasRunning = s.status !== 'exited';
-    s.mcp = names;
+    if ('mcp' in change) s.mcp = change.mcp ?? null;
+    if ('skills' in change) s.skills = change.skills ?? null;
     s.mcpUsed = {};
     s.status = 'idle';
     s.unread = false;
     s.updatedAt = Date.now();
-    const note = `\r\n\x1b[33m── Khởi động lại phiên với ${names ? `${names.length} MCP đã chọn` : 'MCP mặc định'} ──\x1b[0m\r\n`;
+    const what = 'skills' in change && !('mcp' in change)
+      ? (s.skills ? 'bộ skill đã chọn' : 'skill mặc định')
+      : (s.mcp ? `${s.mcp.length} MCP đã chọn` : 'MCP mặc định');
+    const note = `\r\n\x1b[33m── Khởi động lại phiên với ${what} ──\x1b[0m\r\n`;
     s.buffer += note;
     this.emit('data', id, note);
     const resumable = s.claudeSessionId && (this.hasSession ?? history.hasSession)(s.cwd, s.claudeSessionId);
@@ -177,6 +198,7 @@ class SessionManager extends EventEmitter {
     if (s.status !== 'exited') s.proc.kill();
     this.sessions.delete(id);
     fs.rm(this.mcpConfigFile(id), { force: true }, () => {});
+    fs.rm(this.settingsFile(id), { force: true }, () => {});
     this.emit('change');
   }
 
@@ -198,4 +220,4 @@ class SessionManager extends EventEmitter {
   }
 }
 
-module.exports = { SessionManager, writeHookSettings, claudeCommand };
+module.exports = { SessionManager, writeHookSettings, hookSettings, claudeCommand };

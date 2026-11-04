@@ -16,6 +16,10 @@ const state = {
   mcpAvail: new Map(), // cwd -> [{ name, scope, type, target }]
   mcpHealth: new Map(), // cwd -> { loading, result: { name: { ok, pending, detail } } }
   mcpDraft: null, // { sid, names: Set } – unsaved checkbox state
+  skillsOpen: false,
+  skillAvail: new Map(), // cwd -> { plugins: [{ id, name, version, scope, enabled, skills }], skills: [{ name, description, tokens, scope }] }
+  skillDraft: null, // { sid, plugins: { id: bool }, off: Set } – unsaved checkbox state
+  skillExpanded: new Set(), // plugin ids whose skill list is unfolded
   shells: [],
   shellKinds: [],
   workspaces: [], // parent folders that hold several repos: [{ path, name, alias, missing }]
@@ -932,10 +936,7 @@ function renderWorktreeView() {
       h('button', { class: 'btn ghost', onclick: () => api('POST', '/api/open', { cwd: wt.path, tool: 'lazygit' }) }, icon('git'), 'lazygit'),
       h('button', { class: 'btn ghost', onclick: () => api('POST', '/api/open', { cwd: wt.path, tool: 'explorer' }) }, icon('folder'), 'Thư mục'),
       h('button', { class: 'btn ghost', title: 'Mở terminal tại thư mục này', onclick: () => openShell(wt.path) }, icon('terminal'), 'Terminal'),
-      h('button', { class: 'btn ghost', title: 'Xem và sửa file trong thư mục này', onclick: () => openEditor(wt.path) }, icon('file'), 'Tệp'),
-      wt.main
-        ? h('button', { class: 'btn ghost', onclick: () => renameFolder(project.path, project.alias, 'dự án') }, icon('edit'), 'Đặt tên dự án')
-        : h('button', { class: 'btn ghost', onclick: () => renameFolder(wt.path, wt.alias, 'thư mục') }, icon('edit'), 'Đặt tên thư mục')),
+      h('button', { class: 'btn ghost', title: 'Xem và sửa file trong thư mục này', onclick: () => openEditor(wt.path) }, icon('file'), 'Tệp')),
     list.length ? h('h3', {}, 'Phiên đang mở') : null,
     list.length ? h('div', { class: 'cards' }, list.map((s, i) => h('button', { class: `card ${s.status}`, onclick: () => selectSession(s.id) },
       h('div', { class: 'top' }, dot(s), h('span', { class: `status-text ${s.status}` }, STATUS[s.status])),
@@ -963,8 +964,7 @@ function renderWorkspaceView() {
       h('button', { class: 'btn', onclick: () => startSession(w.path, { continue: true }) }, icon('resume'), 'Tiếp tục phiên gần nhất'),
       h('button', { class: 'btn ghost', onclick: () => openShell(w.path) }, icon('terminal'), 'Terminal'),
       h('button', { class: 'btn ghost', title: 'Xem và sửa file trong workspace', onclick: () => openEditor(w.path) }, icon('file'), 'Tệp'),
-      h('button', { class: 'btn ghost', onclick: () => api('POST', '/api/open', { cwd: w.path, tool: 'explorer' }) }, icon('folder'), 'Thư mục'),
-      h('button', { class: 'btn ghost', onclick: () => renameFolder(w.path, w.alias, 'workspace') }, icon('edit'), 'Đặt tên workspace')),
+      h('button', { class: 'btn ghost', onclick: () => api('POST', '/api/open', { cwd: w.path, tool: 'explorer' }) }, icon('folder'), 'Thư mục')),
     list.length ? h('h3', {}, 'Phiên đang mở') : null,
     list.length ? h('div', { class: 'cards' }, list.map((s, i) => h('button', { class: `card ${s.status}`, onclick: () => selectSession(s.id) },
       h('div', { class: 'top' }, dot(s), h('span', { class: `status-text ${s.status}` }, STATUS[s.status])),
@@ -1116,6 +1116,123 @@ function renderMcpPanel(s) {
       : 'Đổi MCP sẽ khởi động lại phiên vì Claude Code chỉ nạp MCP lúc mở phiên. “Kiểm tra kết nối” chạy thử từng MCP, mất vài giây.'));
 }
 
+// ---------- plugins & skills per session ----------
+const skillLoading = new Set();
+async function loadSkills(cwd) {
+  if (skillLoading.has(norm(cwd))) return;
+  skillLoading.add(norm(cwd));
+  try {
+    state.skillAvail.set(norm(cwd), await api('GET', `/api/skills?cwd=${encodeURIComponent(cwd)}`));
+  } finally {
+    skillLoading.delete(norm(cwd));
+  }
+  render();
+}
+
+// what the session runs with now: its own choice, or each plugin's default for the folder
+function activeSkills(s, avail) {
+  const plugins = {};
+  for (const p of avail.plugins) plugins[p.id] = s.skills?.plugins?.[p.id] ?? p.enabled;
+  return { plugins, off: new Set(s.skills?.off || []) };
+}
+
+// skills Claude can use with this selection, and the rough tokens their descriptions cost every session
+function skillTotals(avail, sel) {
+  let count = 0, tokens = 0;
+  const all = [...avail.plugins.filter(p => sel.plugins[p.id]).flatMap(p => p.skills), ...avail.skills];
+  for (const sk of all) {
+    if (sel.off.has(sk.name)) continue;
+    count++;
+    tokens += sk.tokens;
+  }
+  return { count, tokens };
+}
+
+// skills turned off inside a disabled plugin don't matter; drop them so the choice stays tidy
+function skillSelection(avail, sel) {
+  const inactive = new Set(avail.plugins.filter(p => !sel.plugins[p.id]).flatMap(p => p.skills.map(sk => sk.name)));
+  return { plugins: { ...sel.plugins }, off: [...sel.off].filter(n => !inactive.has(n)).sort() };
+}
+
+async function applySkills(s, selection) {
+  const msg = s.claudeSessionId
+    ? 'Phiên sẽ khởi động lại và mở lại đúng cuộc trò chuyện này với bộ skill mới. Tiếp tục?'
+    : 'Phiên chưa có mã hội thoại nên sẽ mở lại từ đầu với bộ skill mới. Tiếp tục?';
+  if (!confirm(msg)) return;
+  await api('POST', `/api/sessions/${s.id}/restart`, { skills: selection });
+  state.skillDraft = null;
+  requestAnimationFrame(fitSelected);
+}
+
+function renderSkillPanel(s) {
+  const panel = document.getElementById('skill-panel');
+  const avail = state.skillAvail.get(norm(s.cwd));
+  if (!avail) {
+    panel.replaceChildren(h('h3', {}, 'Skill của phiên'), h('p', { class: 'hint' }, 'Đang đọc plugin và skill…'));
+    return;
+  }
+  const active = activeSkills(s, avail);
+  if (state.skillDraft?.sid !== s.id) state.skillDraft = { sid: s.id, plugins: { ...active.plugins }, off: new Set(active.off) };
+  const draft = state.skillDraft;
+  const dirty = JSON.stringify(skillSelection(avail, draft)) !== JSON.stringify(skillSelection(avail, active));
+  const totals = skillTotals(avail, draft);
+
+  const skillRow = (sk, disabled) => h('li', { class: 'skill-row' },
+    h('label', { title: sk.description },
+      h('input', {
+        type: 'checkbox', checked: !draft.off.has(sk.name), disabled,
+        onchange: e => { e.target.checked ? draft.off.delete(sk.name) : draft.off.add(sk.name); render(); },
+      }),
+      h('span', { class: 'mcp-name' }, sk.name.replace(/^[^:]+:/, '')),
+      h('span', { class: 'skill-tok' }, `~${sk.tokens}`)));
+
+  const pluginBlock = p => {
+    const on = draft.plugins[p.id];
+    const offCount = p.skills.filter(sk => draft.off.has(sk.name)).length;
+    const tokens = p.skills.reduce((n, sk) => n + sk.tokens, 0);
+    return h('li', { class: on ? 'on' : '' },
+      h('details', { open: state.skillExpanded.has(p.id), ontoggle: e => e.target.open ? state.skillExpanded.add(p.id) : state.skillExpanded.delete(p.id) },
+        h('summary', {},
+          h('input', {
+            type: 'checkbox', checked: on, title: on ? 'Tắt cả plugin cho phiên này' : 'Bật plugin cho phiên này',
+            onclick: e => e.stopPropagation(),
+            onchange: e => { draft.plugins[p.id] = e.target.checked; render(); },
+          }),
+          h('span', { class: 'mcp-name' }, p.name),
+          h('span', { class: 'badge', title: p.scope === 'user' ? 'Cài cho mọi dự án' : 'Cài riêng cho dự án này' }, p.scope)),
+        h('div', { class: 'mcp-meta' }, `v${p.version} · ${p.skills.length} skill · ~${tokens} token`,
+          offCount && on ? h('span', { class: 'mcp-used' }, ` · chặn ${offCount}`) : null,
+          p.enabled ? null : h('span', {}, ' · mặc định tắt')),
+        p.skills.length ? h('ul', { class: 'skill-list' }, p.skills.map(sk => skillRow(sk, !on))) : null));
+  };
+
+  fill(panel,
+    h('h3', {}, 'Skill của phiên'),
+    h('p', { class: 'mcp-mode' }, s.skills ? 'Bộ plugin/skill chọn riêng cho phiên này' : 'Mặc định: theo cài đặt plugin của thư mục này',
+      h('br'), `${totals.count} skill · luôn nạp khoảng ${totals.tokens.toLocaleString('vi-VN')} token mô tả`),
+    h('h3', { class: 'mcp-sub' }, 'Plugin'),
+    avail.plugins.length ? h('ul', { class: 'mcp-list' }, avail.plugins.map(pluginBlock)) : h('p', { class: 'hint' }, 'Chưa cài plugin nào cho thư mục này.'),
+    avail.skills.length ? [
+      h('h3', { class: 'mcp-sub' }, 'Skill riêng'),
+      h('ul', { class: 'mcp-list' }, avail.skills.map(sk => h('li', { class: draft.off.has(sk.name) ? '' : 'on' },
+        h('label', { title: sk.description },
+          h('input', {
+            type: 'checkbox', checked: !draft.off.has(sk.name),
+            onchange: e => { e.target.checked ? draft.off.delete(sk.name) : draft.off.add(sk.name); render(); },
+          }),
+          h('span', { class: 'mcp-name' }, sk.name),
+          h('span', { class: 'badge', title: sk.scope === 'user' ? '~/.claude/skills' : '.claude/skills của repo' }, sk.scope)),
+        h('div', { class: 'mcp-meta' }, `~${sk.tokens} token · ${sk.description}`)))),
+    ] : null,
+    h('div', { class: 'mcp-actions' },
+      h('button', { class: 'btn small primary', disabled: !dirty, onclick: () => applySkills(s, skillSelection(avail, draft)) }, icon('resume'), 'Áp dụng & khởi động lại'),
+      s.skills ? h('button', { class: 'btn small', onclick: () => applySkills(s, null) }, 'Về mặc định') : null,
+      h('button', { class: 'btn small ghost', onclick: () => { state.skillAvail.delete(norm(s.cwd)); state.skillDraft = null; loadSkills(s.cwd).catch(() => {}); render(); } }, icon('resume'), 'Đọc lại')),
+    h('p', { class: 'set-hint' }, 'Tắt plugin hoặc skill riêng thì Claude không còn thấy mô tả của nó, đỡ tốn token và đỡ gọi nhầm. ',
+      'Tắt lẻ một skill trong plugin chỉ chặn Claude gọi nó; tên vẫn nằm trong danh sách. ',
+      'Skill có sẵn của Claude Code (code-review, simplify…) không liệt kê ở đây. Đổi xong phiên sẽ khởi động lại và giữ cuộc trò chuyện.'));
+}
+
 function renderSessionView() {
   const s = state.sessions.find(x => x.id === state.selected.id);
   if (!s) return;
@@ -1146,6 +1263,13 @@ function renderSessionView() {
   const avail = state.mcpAvail.get(norm(s.cwd));
   document.querySelector('[data-act="mcp"] .mcp-label').textContent = avail ? `MCP (${activeMcp(s, avail).length})` : 'MCP';
   if (!avail) loadMcp(s.cwd).catch(() => {});
+
+  const skillPanel = document.getElementById('skill-panel');
+  skillPanel.hidden = !state.skillsOpen;
+  if (state.skillsOpen) renderSkillPanel(s);
+  const skillAvail = state.skillAvail.get(norm(s.cwd));
+  document.querySelector('[data-act="skills"] .skill-label').textContent = skillAvail ? `Skill (${skillTotals(skillAvail, activeSkills(s, skillAvail)).count})` : 'Skill';
+  if (!skillAvail) loadSkills(s.cwd).catch(() => {});
   document.querySelector('[data-act="kill"]').hidden = s.status === 'exited';
 }
 
@@ -1435,9 +1559,41 @@ document.getElementById('diff-edit').onclick = () => {
 document.getElementById('add-project').onclick = addProject;
 document.getElementById('diff-close').onclick = () => { document.getElementById('diff-modal').hidden = true; };
 document.getElementById('diff-modal').onclick = e => { if (e.target.id === 'diff-modal') e.target.hidden = true; };
+// ---------- usage guide ----------
+const guideModal = document.getElementById('guide-modal');
+const guideBody = document.getElementById('guide-body');
+const guideToc = document.getElementById('guide-toc');
+fill(guideToc, [...guideBody.querySelectorAll('section')].map(sec => h('a', {
+  href: `#${sec.id}`, 'data-id': sec.id,
+  onclick: e => { e.preventDefault(); guidePicked = sec.id; sec.scrollIntoView({ block: 'start' }); markGuide(sec.id); },
+}, sec.querySelector('h2').textContent)));
+// a section picked in the table of contents stays highlighted until the reader scrolls by hand
+// (short sections near the end can't reach the top, so position alone would pick the wrong one)
+let guidePicked = null;
+for (const ev of ['wheel', 'pointerdown', 'keydown']) guideBody.addEventListener(ev, () => { guidePicked = null; });
+function markGuide(id) {
+  for (const a of guideToc.children) a.classList.toggle('active', a.dataset.id === id);
+}
+guideBody.addEventListener('scroll', () => {
+  if (guidePicked) return markGuide(guidePicked);
+  const sections = [...guideBody.querySelectorAll('section')];
+  const atEnd = guideBody.scrollTop + guideBody.clientHeight >= guideBody.scrollHeight - 2;
+  const top = guideBody.getBoundingClientRect().top + 40;
+  let current = sections[0];
+  for (const sec of sections) if (sec.getBoundingClientRect().top <= top) current = sec;
+  markGuide(atEnd ? sections.at(-1).id : current.id);
+});
+document.getElementById('open-guide').onclick = () => {
+  guideModal.hidden = false;
+  guideBody.dispatchEvent(new Event('scroll'));
+};
+document.getElementById('guide-close').onclick = () => { guideModal.hidden = true; };
+guideModal.onclick = e => { if (e.target === guideModal) guideModal.hidden = true; };
+
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   document.getElementById('diff-modal').hidden = true;
+  guideModal.hidden = true;
   closeSettings();
 });
 document.getElementById('open-settings').onclick = openSettings;
@@ -1456,8 +1612,12 @@ document.querySelector('.session-head .actions').onclick = async e => {
     await openEditor(s.cwd);
   } else if (act === 'shell') {
     await openShell(s.cwd);
-  } else if (act === 'rename') {
-    await renameSession(s);
+  } else if (act === 'skills') {
+    state.skillsOpen = !state.skillsOpen;
+    state.skillDraft = null;
+    if (state.skillsOpen) { state.skillAvail.delete(norm(s.cwd)); loadSkills(s.cwd).catch(() => {}); }
+    render();
+    requestAnimationFrame(fitSelected);
   } else if (act === 'mcp') {
     state.mcpOpen = !state.mcpOpen;
     state.mcpDraft = null;

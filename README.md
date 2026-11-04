@@ -9,6 +9,7 @@ Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code*
 - **Trang tổng quan**: phiên cần bạn xử lý luôn nằm đầu, kèm câu hỏi Claude đang chờ.
 - **Lịch sử phiên**: liệt kê các phiên Claude Code đã lưu của từng thư mục (cả phiên mở ngoài hub) và **mở lại** bằng `claude --resume`.
 - **MCP theo từng phiên**: xem các MCP server phiên đang dùng, kiểm tra kết nối, bật/tắt từng MCP. Đổi MCP sẽ khởi động lại phiên và giữ nguyên cuộc trò chuyện.
+- **Skill/plugin theo từng phiên**: xem các plugin và skill phiên đang nạp, số token mô tả luôn nằm trong ngữ cảnh; tắt cả plugin, tắt skill riêng (`~/.claude/skills`, `.claude/skills`) hoặc chặn lẻ từng skill trong plugin. Đổi xong phiên khởi động lại và giữ nguyên cuộc trò chuyện.
 - **Terminal popup**: mở PowerShell, cmd hoặc Git Bash ngay tại thư mục của nhánh/phiên; nhiều tab, kéo thả, đổi kích thước, thu nhỏ.
 - **Git**: tạo worktree/nhánh mới, xem file đã sửa và diff từng file, mở lazygit hoặc thư mục.
 - **Text editor nhẹ** (CodeMirror): cây thư mục của dự án/workspace, nhiều tab, tô màu cú pháp (C#, JS/TS/JSX, JSON, HTML/XML, CSS/SCSS, SQL, Markdown, YAML, Python, PowerShell, shell…), tìm/thay thế, Ctrl+S để lưu. Giữ nguyên BOM và kiểu xuống dòng CRLF/LF; cảnh báo trước khi ghi đè file đã bị sửa bên ngoài (ví dụ Claude vừa sửa). Không có IntelliSense/debug — dùng VS Code cho việc đó.
@@ -74,10 +75,12 @@ claude-hub [--port 4317] [--no-open]
 4. Trang của nhánh có **Lịch sử phiên** để mở lại phiên cũ, nút **Terminal**, **lazygit** và danh sách **file đã sửa** (bấm vào để xem diff).
 5. Trên thanh của một phiên:
    - **MCP**: xem và bật/tắt MCP server.
+   - **Skill**: bật/tắt plugin và skill.
    - **Terminal**: mở shell tại thư mục của phiên.
-   - **Đặt tên**: đặt tên cho phiên.
    - **File đã sửa**, **Dừng**, **Đóng phiên**.
-6. **Cài đặt** (góc phải trên cùng) để đổi giao diện, shell mặc định của terminal popup và âm thanh báo.
+6. Đặt tên dự án, thư mục, workspace và phiên bằng nút bút chì trên từng dòng ở sidebar.
+7. **Hướng dẫn sử dụng** (góc dưới bên trái sidebar) mở bản hướng dẫn đầy đủ ngay trong hub.
+8. **Cài đặt** (góc phải trên cùng) để đổi giao diện, shell mặc định của terminal popup và âm thanh báo.
 
 ## Dữ liệu được lưu ở đâu
 
@@ -86,6 +89,7 @@ claude-hub [--port 4317] [--no-open]
 | Danh sách dự án, workspace, tên tùy đặt | `~/.claude-hub/config.json` |
 | Hook báo trạng thái (tự tạo mỗi lần chạy) | `~/.claude-hub/hook-settings.json` |
 | Cấu hình MCP riêng của từng phiên | `~/.claude-hub/mcp/<id>.json` (xóa khi đóng phiên) |
+| Chọn plugin/skill riêng của từng phiên | `~/.claude-hub/settings/<id>.json` (hook + `enabledPlugins`, `skillOverrides`, `permissions.deny`; xóa khi đóng phiên) |
 | Cài đặt giao diện | `localStorage` của trình duyệt, theo từng cổng |
 | Lịch sử hội thoại | Do Claude Code tự lưu trong `~/.claude/projects/`; hub chỉ đọc |
 
@@ -125,6 +129,7 @@ src/sessions.js     phiên Claude Code (node-pty), trạng thái, khởi động
 src/shells.js       terminal popup
 src/history.js      đọc lịch sử phiên trong ~/.claude/projects
 src/mcp.js          đọc cấu hình MCP, cấu hình riêng cho từng phiên, kiểm tra kết nối
+src/skills.js       đọc plugin/skill, settings bật/tắt skill cho từng phiên
 src/git.js          worktree, file đã sửa, diff
 src/config.js       danh sách dự án, tên tùy đặt
 src/status.js       chuyển trạng thái từ hook event
@@ -138,3 +143,7 @@ public/             giao diện (HTML/CSS/JS thuần, không cần build)
 - **Không tìm thấy `claude`**: đặt `CLAUDE_HUB_CLAUDE` trỏ tới file chạy của Claude Code.
 - **Cổng 4317 đã bị dùng**: chạy `claude-hub --port 4400`.
 - **MCP báo "lỗi"** trong panel MCP: rê chuột vào để xem lý do; thường do cấu hình server trong `~/.claude.json` hoặc dịch vụ phía sau (ví dụ database) chưa chạy.
+
+## Tác giả
+
+**Hoàng Lân Dev** — <https://github.com/hoanglanse04>

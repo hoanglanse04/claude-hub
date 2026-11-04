@@ -9,6 +9,7 @@ const config = require('./config');
 const { SessionManager, claudeCommand } = require('./sessions');
 const history = require('./history');
 const mcp = require('./mcp');
+const skills = require('./skills');
 const { ShellManager } = require('./shells');
 const { layout } = require('./graph');
 const files = require('./files');
@@ -217,6 +218,11 @@ function createHub({ port }) {
       if (!cwd) return send(400, { error: 'Thiếu cwd' });
       return send(200, { servers: mcp.available(cwd).map(mcp.publicInfo) });
     }
+    if (route === 'GET /api/skills') {
+      const cwd = url.searchParams.get('cwd');
+      if (!cwd || !fs.existsSync(cwd)) return send(400, { error: 'Thư mục không tồn tại' });
+      return send(200, await skills.available(claudeCommand(), cwd));
+    }
     if (route === 'GET /api/mcp/health') {
       const cwd = url.searchParams.get('cwd');
       if (!cwd || !fs.existsSync(cwd)) return send(400, { error: 'Thư mục không tồn tại' });
@@ -246,7 +252,10 @@ function createHub({ port }) {
       if (req.method === 'POST' && action === 'restart') {
         const s = sessions.sessions.get(id);
         if (!s) return send(404, { error: 'Không tìm thấy phiên' });
-        return send(200, sessions.restart(id, { mcp: mcpSelection(s.cwd, body.mcp) }));
+        const change = {};
+        if ('mcp' in body) change.mcp = mcpSelection(s.cwd, body.mcp);
+        if ('skills' in body) change.skills = skills.validate(body.skills);
+        return send(200, sessions.restart(id, change));
       }
       if (req.method === 'POST' && action === 'name') sessions.rename(id, body.name);
       else if (req.method === 'POST' && action === 'kill') sessions.kill(id);
