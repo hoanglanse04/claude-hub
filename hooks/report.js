@@ -17,7 +17,7 @@ async function send() {
   let payload = {};
   try {
     const data = JSON.parse(input);
-    payload = { prompt: data.prompt, message: data.message, claudeSessionId: data.session_id };
+    payload = { prompt: data.prompt, message: data.message, claudeSessionId: data.session_id, tool: data.tool_name };
   } catch { /* no payload */ }
   try {
     await fetch(`http://127.0.0.1:${port}/api/hook`, {

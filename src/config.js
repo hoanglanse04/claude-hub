@@ -9,10 +9,28 @@ const FILE = path.join(HOME, 'config.json');
 function load() {
   try {
     const cfg = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    return { projects: Array.isArray(cfg.projects) ? cfg.projects : [] };
+    return {
+      projects: Array.isArray(cfg.projects) ? cfg.projects : [],
+      aliases: cfg.aliases && typeof cfg.aliases === 'object' ? cfg.aliases : {},
+    };
   } catch {
-    return { projects: [] };
+    return { projects: [], aliases: {} };
   }
+}
+
+// Display names the user gave to a repo or worktree folder, keyed by normalized path.
+const aliasKey = dir => path.resolve(dir).toLowerCase();
+
+function aliasOf(cfg, dir) {
+  return cfg.aliases?.[aliasKey(dir)] || '';
+}
+
+function setAlias(cfg, dir, name) {
+  cfg.aliases ??= {};
+  const clean = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (clean) cfg.aliases[aliasKey(dir)] = clean;
+  else delete cfg.aliases[aliasKey(dir)];
+  return clean;
 }
 
 function save(cfg) {
@@ -55,4 +73,4 @@ function removeProject(cfg, dir) {
   cfg.projects = cfg.projects.filter(p => !samePath(p, dir));
 }
 
-module.exports = { HOME, load, save, findRepos, addProjects, removeProject, samePath };
+module.exports = { HOME, load, save, findRepos, addProjects, removeProject, samePath, aliasOf, setAlias };

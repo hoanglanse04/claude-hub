@@ -26,6 +26,17 @@ test('server', async t => {
     assert.equal((await fetch(base + '/api/state')).status, 401);
   });
 
+  await t.test('rejects a malformed resume id before spawning claude', async () => {
+    const res = await fetch(base + '/api/sessions', { method: 'POST', headers, body: JSON.stringify({ cwd: '.', resume: '--dangerously-skip-permissions' }) });
+    assert.equal(res.status, 400);
+  });
+
+  await t.test('lists history for a cwd', async () => {
+    const res = await fetch(base + '/api/history?cwd=' + encodeURIComponent(os.tmpdir()), { headers });
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray((await res.json()).sessions));
+  });
+
   await t.test('rejects requests from other origins', async () => {
     const res = await fetch(base + '/api/state', { headers: { ...headers, origin: 'http://evil.example' } });
     assert.equal(res.status, 403);

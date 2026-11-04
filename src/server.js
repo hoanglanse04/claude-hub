@@ -6,7 +6,10 @@ const { spawn } = require('node:child_process');
 const { WebSocketServer } = require('ws');
 const git = require('./git');
 const config = require('./config');
-const { SessionManager } = require('./sessions');
+const { SessionManager, claudeCommand } = require('./sessions');
+const history = require('./history');
+const mcp = require('./mcp');
+const { ShellManager } = require('./shells');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MODULES = path.join(__dirname, '..', 'node_modules');
@@ -25,6 +28,7 @@ function createHub({ port }) {
   const token = crypto.randomBytes(24).toString('hex');
   const cfg = config.load();
   const sessions = new SessionManager({ hookSettingsFile: path.join(config.HOME, 'hook-settings.json'), port, token });
+  const shells = new ShellManager();
   let projects = [];
   let projectsJSON = '';
   const clients = new Set();
@@ -51,10 +55,11 @@ function createHub({ port }) {
         for (const wt of worktrees) {
           wt.changes = await git.changedFiles(wt.path).catch(() => []);
           wt.main = config.samePath(wt.path, repo);
+          wt.alias = wt.main ? '' : config.aliasOf(cfg, wt.path);
         }
-        return { path: repo, name, worktrees };
+        return { path: repo, name, alias: config.aliasOf(cfg, repo), worktrees };
       } catch (err) {
-        return { path: repo, name, worktrees: [], error: err.message };
+        return { path: repo, name, alias: config.aliasOf(cfg, repo), worktrees: [], error: err.message };
       }
     }));
   }
@@ -80,6 +85,9 @@ function createHub({ port }) {
   sessions.on('notify', session => broadcast({ type: 'notify', session }));
   sessions.on('data', (id, data) => broadcast({ type: 'output', id, data }));
   sessions.on('change', () => refreshProjects());
+  const shellsMsg = () => ({ type: 'shells', shells: shells.list(), kinds: shells.kinds() });
+  shells.on('change', () => broadcast(shellsMsg()));
+  shells.on('data', (id, data) => broadcast({ type: 'shell-output', id, data }));
 
   function openTool(cwd, tool) {
     const opts = { cwd, detached: true, stdio: 'ignore', windowsHide: false };
@@ -95,7 +103,16 @@ function createHub({ port }) {
       res.end(JSON.stringify(data));
     };
     const route = `${req.method} ${url.pathname}`;
-    const sessionMatch = url.pathname.match(/^\/api\/sessions\/([\w-]+)(?:\/(kill|read))?$/);
+    const sessionMatch = url.pathname.match(/^\/api\/sessions\/([\w-]+)(?:\/(kill|read|restart|name))?$/);
+    // null keeps Claude Code's own MCP loading; a list must only name servers configured for cwd
+    const mcpSelection = (cwd, list) => {
+      if (list == null) return null;
+      if (!Array.isArray(list)) throw new Error('Danh sách MCP không hợp lệ');
+      const known = new Set(mcp.available(cwd).map(s => s.name));
+      const bad = list.filter(n => !known.has(n));
+      if (bad.length) throw new Error(`MCP không tồn tại: ${bad.join(', ')}`);
+      return list;
+    };
 
     if (route === 'POST /api/hook') {
       sessions.applyEvent(body.sid, body.event, body.payload || {});
@@ -123,6 +140,13 @@ function createHub({ port }) {
       await refreshProjects();
       return send(200, { ok: true });
     }
+    if (route === 'POST /api/alias') {
+      if (!body.path) return send(400, { error: 'Thiếu đường dẫn' });
+      const name = config.setAlias(cfg, body.path, body.name);
+      config.save(cfg);
+      await refreshProjects();
+      return send(200, { name });
+    }
     if (route === 'POST /api/worktrees') {
       const branch = String(body.branch || '').trim();
       if (!branch) return send(400, { error: 'Thiếu tên nhánh' });
@@ -134,18 +158,49 @@ function createHub({ port }) {
       const text = await git.diff(url.searchParams.get('cwd'), url.searchParams.get('file'));
       return send(200, { diff: text });
     }
+    if (route === 'GET /api/history') {
+      const cwd = url.searchParams.get('cwd');
+      if (!cwd) return send(400, { error: 'Thiếu cwd' });
+      return send(200, { sessions: history.listHistory(cwd) });
+    }
+    if (route === 'GET /api/mcp') {
+      const cwd = url.searchParams.get('cwd');
+      if (!cwd) return send(400, { error: 'Thiếu cwd' });
+      return send(200, { servers: mcp.available(cwd).map(mcp.publicInfo) });
+    }
+    if (route === 'GET /api/mcp/health') {
+      const cwd = url.searchParams.get('cwd');
+      if (!cwd || !fs.existsSync(cwd)) return send(400, { error: 'Thư mục không tồn tại' });
+      return send(200, { health: await mcp.health(claudeCommand(), cwd) });
+    }
     if (route === 'POST /api/open') {
       openTool(body.cwd, body.tool);
       return send(200, { ok: true });
     }
     if (route === 'POST /api/sessions') {
       if (!body.cwd || !fs.existsSync(body.cwd)) return send(400, { error: 'Thư mục không tồn tại' });
-      const args = body.continue ? ['--continue'] : [];
-      return send(200, sessions.create({ cwd: body.cwd, args }));
+      if (body.resume && !history.ID_RE.test(body.resume)) return send(400, { error: 'Mã phiên không hợp lệ' });
+      const args = body.resume ? ['--resume', body.resume] : body.continue ? ['--continue'] : [];
+      return send(200, sessions.create({ cwd: body.cwd, args, mcp: mcpSelection(body.cwd, body.mcp) }));
+    }
+    if (route === 'POST /api/shells') {
+      if (!body.cwd || !fs.existsSync(body.cwd)) return send(400, { error: 'Thư mục không tồn tại' });
+      return send(200, shells.create({ cwd: body.cwd, kind: body.kind }));
+    }
+    const shellMatch = url.pathname.match(/^\/api\/shells\/(sh-[\w-]+)$/);
+    if (shellMatch && req.method === 'DELETE') {
+      shells.remove(shellMatch[1]);
+      return send(200, { ok: true });
     }
     if (sessionMatch) {
       const [, id, action] = sessionMatch;
-      if (req.method === 'POST' && action === 'kill') sessions.kill(id);
+      if (req.method === 'POST' && action === 'restart') {
+        const s = sessions.sessions.get(id);
+        if (!s) return send(404, { error: 'Không tìm thấy phiên' });
+        return send(200, sessions.restart(id, { mcp: mcpSelection(s.cwd, body.mcp) }));
+      }
+      if (req.method === 'POST' && action === 'name') sessions.rename(id, body.name);
+      else if (req.method === 'POST' && action === 'kill') sessions.kill(id);
       else if (req.method === 'POST' && action === 'read') sessions.markRead(id);
       else if (req.method === 'DELETE' && !action) sessions.remove(id);
       else return send(404, { error: 'Không có route này' });
@@ -205,11 +260,14 @@ function createHub({ port }) {
     ws.send(JSON.stringify({ type: 'projects', projects }));
     ws.send(JSON.stringify({ type: 'sessions', sessions: sessions.list() }));
     for (const s of sessions.list()) ws.send(JSON.stringify({ type: 'replay', id: s.id, data: sessions.buffer(s.id) }));
+    ws.send(JSON.stringify(shellsMsg()));
+    for (const s of shells.list()) ws.send(JSON.stringify({ type: 'shell-replay', id: s.id, data: shells.buffer(s.id) }));
     ws.on('message', raw => {
       let msg;
       try { msg = JSON.parse(raw); } catch { return; }
-      if (msg.type === 'input') sessions.write(msg.id, msg.data);
-      else if (msg.type === 'resize') sessions.resize(msg.id, msg.cols, msg.rows);
+      const target = shells.has(msg.id) ? shells : sessions;
+      if (msg.type === 'input') target.write(msg.id, msg.data);
+      else if (msg.type === 'resize') target.resize(msg.id, msg.cols, msg.rows);
     });
     ws.on('close', () => clients.delete(ws));
   });
@@ -217,6 +275,7 @@ function createHub({ port }) {
   function close() {
     clearInterval(timer);
     sessions.killAll();
+    shells.killAll();
     for (const ws of clients) ws.close();
     server.close();
   }

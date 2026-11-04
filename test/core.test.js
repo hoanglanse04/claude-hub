@@ -81,3 +81,48 @@ test('addProjects finds repos inside a folder and skips duplicates', async () =>
   assert.equal(cfg.projects.length, process.platform === 'win32' ? 1 : 2);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('listHistory reads saved Claude sessions for a cwd, newest first', () => {
+  const { listHistory } = require('../src/history');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-hist-'));
+  const cwd = path.join(root, 'work', 'my_app');
+  const dir = path.join(root, cwd.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase()); // folder case differs from cwd
+  fs.mkdirSync(dir, { recursive: true });
+  const line = o => JSON.stringify(o);
+  const user = (text, extra = {}) => line({ type: 'user', cwd, gitBranch: 'feat/x', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: text }, ...extra });
+  const older = '11111111-1111-1111-1111-111111111111';
+  const newer = '22222222-2222-2222-2222-222222222222';
+  fs.writeFileSync(path.join(dir, `${older}.jsonl`), [
+    user([{ type: 'text', text: '<ide_opened_file>x.cs</ide_opened_file>' }, { type: 'text', text: 'sửa lỗi đăng nhập' }]),
+    user([{ type: 'tool_result', content: 'ignored' }]),
+    line({ type: 'ai-title', aiTitle: 'Lỗi đăng nhập' }),
+    line({ type: 'last-prompt', lastPrompt: 'chạy test đi' }),
+  ].join('\n'));
+  fs.writeFileSync(path.join(dir, `${newer}.jsonl`), user('thêm API') + '\n');
+  fs.writeFileSync(path.join(dir, '33333333-3333-3333-3333-333333333333.jsonl'), line({ type: 'queue-operation' }) + '\n'); // no prompts
+  fs.writeFileSync(path.join(dir, '44444444-4444-4444-4444-444444444444.jsonl'), user('khác thư mục', { cwd: path.join(root, 'work', 'my-app') }) + '\n');
+  const old = new Date(Date.now() - 60000);
+  fs.utimesSync(path.join(dir, `${older}.jsonl`), old, old);
+
+  const list = listHistory(cwd, root);
+  assert.deepEqual(list.map(s => s.id), [newer, older]);
+  assert.equal(list[1].title, 'Lỗi đăng nhập');
+  assert.equal(list[1].firstPrompt, 'sửa lỗi đăng nhập');
+  assert.equal(list[1].lastPrompt, 'chạy test đi');
+  assert.equal(list[1].prompts, 1);
+  assert.equal(list[1].gitBranch, 'feat/x');
+  assert.deepEqual(listHistory(path.join(root, 'nope'), root), []);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('aliases are keyed by path regardless of case and cleared by an empty name', () => {
+  const config = require('../src/config');
+  const cfg = { projects: [], aliases: {} };
+  const dir = path.join(os.tmpdir(), 'Repo-A');
+  assert.equal(config.setAlias(cfg, dir, '  RIS   bản test  '), 'RIS bản test');
+  assert.equal(config.aliasOf(cfg, dir.toUpperCase()), process.platform === 'win32' ? 'RIS bản test' : '');
+  assert.equal(config.aliasOf(cfg, dir), 'RIS bản test');
+  config.setAlias(cfg, dir, '');
+  assert.equal(config.aliasOf(cfg, dir), '');
+  assert.deepEqual(cfg.aliases, {});
+});
