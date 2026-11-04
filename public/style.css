@@ -43,7 +43,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* ---------- khối vát góc ----------
    Nền của phần tử là màu viền (--line), ::before lấp bên trong 1px bằng --fill;
    cả hai cùng clip-path nên viền chạy theo cạnh vát. */
-.btn, .card, .row, .project, .chip, .badge, .diff-box, .start-actions .btn {
+.btn, .card, .row, .project, .chip, .badge, .diff-box, .dlg, .start-actions .btn {
   --c: var(--cut);
   --line: var(--border);
   --fill: var(--panel);
@@ -53,7 +53,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: var(--line);
   clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
 }
-.btn::before, .card::before, .row::before, .project::before, .chip::before, .badge::before, .diff-box::before {
+.btn::before, .card::before, .row::before, .project::before, .chip::before, .badge::before, .diff-box::before, .dlg::before {
   content: "";
   position: absolute;
   inset: 1px;
@@ -254,6 +254,27 @@ body.no-grid .main { background-image: none; }
 body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none !important; transition: none !important; }
 
 /* ---------- panel Cài đặt ---------- */
+.dlg-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: #000b; animation: dlg-fade .12s ease-out; }
+.dlg { --c: 14px; --line: var(--accent); --fill: var(--bg); width: min(480px, 100%); max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px #000; animation: dlg-pop .14s ease-out; }
+.dlg.wide { width: min(720px, 100%); }
+.dlg-head { display: flex; align-items: center; gap: 10px; padding: 14px 20px 12px; border-bottom: 1px solid var(--border); color: var(--accent); font-family: var(--mono); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
+.dlg-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 6px; }
+.dlg-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 20px 16px; }
+.dlg-msg { margin: 0 0 10px; white-space: pre-line; line-height: 1.55; overflow-wrap: anywhere; }
+.dlg-label { display: block; margin-bottom: 6px; color: var(--muted); font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; }
+.dlg-hint { margin: 8px 0 10px; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+.dlg-row { display: flex; gap: 8px; align-items: stretch; }
+.dlg-row .dlg-input { flex: 1; min-width: 0; }
+.dlg-row .btn { flex-shrink: 0; white-space: nowrap; }
+.dlg-foot .btn.danger { --line: var(--danger); color: var(--danger); }
+.dlg-input { width: 100%; box-sizing: border-box; padding: 8px 10px; background: var(--panel); color: var(--text); border: 1px solid var(--border-2); outline: 0; font-family: var(--mono); font-size: 13px; }
+textarea.dlg-input { min-height: 180px; resize: vertical; line-height: 1.45; }
+.dlg-input:focus { border-color: var(--accent); }
+.dlg-input.bad { border-color: var(--danger); }
+.dlg-input[readonly] { color: var(--muted); }
+body.no-anim .dlg-backdrop, body.no-anim .dlg { animation: none; }
+@keyframes dlg-fade { from { opacity: 0; } }
+@keyframes dlg-pop { from { opacity: 0; transform: translateY(6px) scale(.98); } }
 .settings-backdrop { position: fixed; inset: 0; z-index: 20; background: #0008; }
 .settings { position: fixed; top: 0; right: 0; bottom: 0; z-index: 21; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--accent); box-shadow: -20px 0 40px #000a; }
 .settings-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); color: var(--accent); font-family: var(--mono); font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }

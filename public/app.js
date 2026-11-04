@@ -190,26 +190,26 @@ function renderSettings() {
       h('button', { class: 'btn small', title: 'Sao chép cấu hình dạng JSON', onclick: exportSettings }, icon('download'), 'Xuất'),
       h('button', { class: 'btn small', title: 'Dán cấu hình JSON', onclick: importSettings }, icon('upload'), 'Nhập'),
       h('span', { class: 'spacer' }),
-      h('button', { class: 'btn small danger', onclick: () => { if (confirm('Khôi phục toàn bộ cài đặt mặc định?')) { settings = { ...DEFAULTS }; saveSettings(); applySettings(); renderSettings(); } } }, icon('resume'), 'Mặc định')));
+      h('button', { class: 'btn small danger', onclick: async () => { if (await askConfirm('Khôi phục toàn bộ cài đặt giao diện về mặc định?', { title: 'Khôi phục cài đặt', okText: 'Khôi phục', danger: true })) { settings = { ...DEFAULTS }; saveSettings(); applySettings(); renderSettings(); } } }, icon('resume'), 'Mặc định')));
 }
 
 async function exportSettings() {
   const json = JSON.stringify(settings, null, 2);
   try {
     await navigator.clipboard.writeText(json);
-    alert('Đã sao chép cấu hình vào clipboard.');
+    showMessage('Đã sao chép cấu hình vào clipboard. Dán vào ô Nhập trên máy khác để dùng lại.', { title: 'Xuất cấu hình' });
   } catch {
-    prompt('Sao chép cấu hình bên dưới:', JSON.stringify(settings));
+    askText({ title: 'Xuất cấu hình', label: 'Không truy cập được clipboard, hãy tự sao chép đoạn dưới:', value: json, multiline: true, readonly: true });
   }
 }
 
-function importSettings() {
-  const text = prompt('Dán cấu hình JSON:');
+async function importSettings() {
+  const text = await askText({ title: 'Nhập cấu hình', label: 'Dán cấu hình JSON (lấy từ nút Xuất):', multiline: true, okText: 'Nhập', required: true, placeholder: '{ "accent": "#faad14", … }' });
   if (!text) return;
   try {
     settings = sanitizeSettings(JSON.parse(text));
   } catch {
-    alert('JSON không hợp lệ.');
+    showMessage('Nội dung không phải JSON hợp lệ.', { title: 'Nhập cấu hình', error: true });
     return;
   }
   saveSettings();
@@ -245,6 +245,99 @@ function fill(el, ...children) {
   el.replaceChildren(...children.flat(Infinity).filter(c => c != null && c !== false));
 }
 
+// ---------- dialogs (in place of prompt / alert / confirm) ----------
+// Resolves with the value of the button used. A button with `run` decides itself: return false to keep
+// the dialog open (e.g. invalid input), anything else becomes the result. Enter = primary, Esc = cancel.
+// Dialogs stack, so an error shown while another dialog is open lands on top of it.
+const dialogStack = [];
+
+function dialog({ title, iconName = 'hub', body = [], buttons = [], wide = false, focus = null }) {
+  return new Promise(resolve => {
+    const before = document.activeElement;
+    const cancelBtn = buttons.find(b => b.cancel);
+    const primaryBtn = buttons.find(b => b.primary);
+    let busy = false;
+
+    const close = value => {
+      document.removeEventListener('keydown', onKey, true);
+      root.remove();
+      dialogStack.splice(dialogStack.indexOf(root), 1);
+      if (before?.isConnected) before.focus();
+      resolve(value);
+    };
+    const press = async b => {
+      if (busy) return;
+      if (!b.run) return close(b.value);
+      busy = true;
+      try {
+        const r = await b.run();
+        if (r !== false) close(r === undefined ? b.value : r);
+      } finally { busy = false; }
+    };
+    // capture phase, and only for the top dialog, so Esc/Enter never reach the page or a terminal behind it
+    const onKey = e => {
+      if (dialogStack.at(-1) !== root) return;
+      if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation();
+        press(cancelBtn || { value: null });
+      } else if (e.key === 'Enter' && primaryBtn && !e.shiftKey && !['TEXTAREA', 'BUTTON'].includes(e.target.tagName)) {
+        e.preventDefault(); e.stopPropagation();
+        press(primaryBtn);
+      }
+    };
+
+    const btnEls = buttons.map(b => h('button', {
+      class: `btn${b.primary ? ' primary' : ''}${b.danger ? ' danger' : ''}${b.ghost ? ' ghost' : ''}`,
+      onclick: () => press(b),
+    }, b.icon ? icon(b.icon) : null, b.text));
+    const root = h('div', { class: 'dlg-backdrop', onmousedown: e => { if (e.target === root) press(cancelBtn || { value: null }); } },
+      h('div', { class: `dlg${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+        h('div', { class: 'dlg-head' }, icon(iconName), h('span', {}, title)),
+        h('div', { class: 'dlg-body' }, body),
+        btnEls.length ? h('div', { class: 'dlg-foot' }, btnEls) : null));
+    document.body.append(root);
+    dialogStack.push(root);
+    document.addEventListener('keydown', onKey, true);
+    const target = focus || btnEls[buttons.indexOf(primaryBtn)] || btnEls.at(-1);
+    requestAnimationFrame(() => { target?.focus(); if (target?.select) target.select(); });
+  });
+}
+
+const dlgText = message => h('p', { class: 'dlg-msg' }, message);
+
+function showMessage(message, { title = 'Thông báo', error = false } = {}) {
+  return dialog({ title, iconName: error ? 'close' : 'hub', body: [dlgText(message)], buttons: [{ text: 'Đóng', primary: true, cancel: true }] });
+}
+
+function askConfirm(message, { title = 'Xác nhận', okText = 'Đồng ý', cancelText = 'Hủy', danger = false } = {}) {
+  return dialog({
+    title, iconName: danger ? 'close' : 'hub', body: [dlgText(message)],
+    buttons: [{ text: cancelText, value: false, cancel: true, ghost: true }, { text: okText, value: true, primary: !danger, danger }],
+  });
+}
+
+// Resolves to the text (possibly empty) or null when cancelled.
+function askText({ title, label, value = '', placeholder = '', hint = '', okText = 'Lưu', multiline = false, required = false, readonly = false }) {
+  const input = multiline
+    ? h('textarea', { class: 'dlg-input', rows: 8, spellcheck: 'false', placeholder, readonly })
+    : h('input', { type: 'text', class: 'dlg-input', spellcheck: 'false', placeholder, readonly });
+  input.value = value;
+  input.oninput = () => input.classList.remove('bad');
+  const buttons = readonly
+    ? [{ text: 'Đóng', primary: true, cancel: true }]
+    : [{ text: 'Hủy', value: null, cancel: true, ghost: true }, {
+      text: okText, primary: true,
+      run: () => {
+        if (required && !input.value.trim()) { input.classList.add('bad'); input.focus(); return false; }
+        return input.value;
+      },
+    }];
+  return dialog({
+    title, iconName: 'edit', wide: multiline, focus: input, buttons,
+    body: [label ? h('label', { class: 'dlg-label' }, label) : null, input, hint ? h('p', { class: 'dlg-hint' }, hint) : null],
+  });
+}
+
 async function api(method, url, body) {
   const res = await fetch(url, {
     method,
@@ -253,7 +346,7 @@ async function api(method, url, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    alert(data.error || `Lỗi ${res.status}`);
+    showMessage(data.error || `Lỗi ${res.status}`, { title: 'Có lỗi', error: true });
     throw new Error(data.error);
   }
   return data;
@@ -311,7 +404,7 @@ function selectWorkspace(path) {
 }
 
 async function removeWorkspace(w) {
-  if (!confirm(`Gỡ workspace "${wsLabel(w)}" khỏi dashboard? Các dự án con vẫn giữ nguyên, không xóa file nào.`)) return;
+  if (!await askConfirm(`Gỡ workspace "${wsLabel(w)}" khỏi dashboard?\nCác dự án con vẫn giữ nguyên, không xóa file nào.`, { title: 'Gỡ workspace', okText: 'Gỡ', danger: true })) return;
   await api('DELETE', '/api/workspaces', { path: w.path });
 }
 
@@ -335,13 +428,13 @@ function sessionLabel(s, i) {
 }
 
 async function renameFolder(path, current, kind) {
-  const name = prompt(`Tên hiển thị cho ${kind} (để trống để dùng tên gốc):\n${path}`, current || '');
+  const name = await askText({ title: `Đặt tên ${kind}`, label: `Tên hiển thị cho ${kind}`, value: current || '', placeholder: basename(path), hint: `${path}\nĐể trống để dùng tên gốc.` });
   if (name === null) return;
   await api('POST', '/api/alias', { path, name });
 }
 
 async function renameSession(s) {
-  const name = prompt('Tên cho phiên này (để trống để dùng yêu cầu đầu tiên):', s.name || '');
+  const name = await askText({ title: 'Đặt tên phiên', label: 'Tên cho phiên này', value: s.name || '', placeholder: s.title || 'Phiên Claude', hint: 'Để trống để dùng yêu cầu đầu tiên làm tên.' });
   if (name === null) return;
   await api('POST', `/api/sessions/${s.id}/name`, { name });
 }
@@ -679,26 +772,61 @@ async function startSession(cwd, opts = {}) {
   selectSession(s.id);
 }
 
+// the server opens the Windows folder dialog (a browser can't return a real path)
+const CAN_PICK_FOLDER = /^Win/.test(navigator.platform);
+let lastPickedParent = '';
+
 async function addProject() {
-  const path = prompt('Đường dẫn repo, hoặc thư mục chứa nhiều repo (ví dụ D:\\CPLUS):');
-  if (!path) return;
-  const { added, workspace } = await api('POST', '/api/projects', { path: path.trim().replace(/^"|"$/g, '') });
+  const input = h('input', { type: 'text', class: 'dlg-input', spellcheck: 'false', placeholder: 'D:\\CPLUS\\ten-du-an' });
+  const status = h('p', { class: 'dlg-hint' }, 'Chọn một repo git, hoặc thư mục cha chứa nhiều repo (hub quét sâu 2 cấp và tạo thêm một workspace cho thư mục cha).');
+  input.oninput = () => input.classList.remove('bad');
+  const pickBtn = h('button', { class: 'btn small', type: 'button' }, icon('folder'), 'Chọn thư mục…');
+  const pick = async () => {
+    pickBtn.disabled = true;
+    const old = status.textContent;
+    status.textContent = 'Đang mở hộp chọn thư mục của Windows… (có thể nằm sau cửa sổ này nếu không thấy)';
+    try {
+      const { path } = await api('POST', '/api/pick-folder', { title: 'Chọn thư mục dự án', initial: input.value.trim() || lastPickedParent });
+      if (path) {
+        input.value = path;
+        lastPickedParent = path.replace(/[\\/][^\\/]+[\\/]?$/, '');
+      }
+    } catch { /* error already shown */ }
+    status.textContent = old;
+    pickBtn.disabled = false;
+    input.focus();
+  };
+  pickBtn.onclick = pick;
+
+  const result = await dialog({
+    title: 'Thêm dự án', iconName: 'plus', focus: input,
+    body: [h('label', { class: 'dlg-label' }, 'Thư mục'), h('div', { class: 'dlg-row' }, input, CAN_PICK_FOLDER ? pickBtn : null), status],
+    buttons: [{ text: 'Hủy', value: null, cancel: true, ghost: true }, {
+      text: 'Thêm', icon: 'plus', primary: true,
+      run: async () => {
+        const path = input.value.trim().replace(/^"|"$/g, '');
+        if (!path) { input.classList.add('bad'); input.focus(); return false; }
+        try { return await api('POST', '/api/projects', { path }); } catch { return false; }
+      },
+    }],
+  });
+  if (!result) return;
   const lines = [];
-  if (workspace) lines.push('Đã thêm workspace (mở được phiên Claude ở folder cha).');
-  if (added.length) lines.push(`Đã thêm ${added.length} dự án:\n${added.join('\n')}`);
-  alert(lines.join('\n\n'));
+  if (result.workspace) lines.push('Đã thêm workspace: mở được phiên Claude ở thư mục cha.');
+  if (result.added.length) lines.push(`Đã thêm ${result.added.length} dự án:\n${result.added.join('\n')}`);
+  showMessage(lines.join('\n\n'), { title: 'Đã thêm dự án' });
 }
 
 async function removeProject(p) {
-  if (!confirm(`Gỡ "${projectLabel(p)}" khỏi dashboard? (Không xóa file nào trên ổ đĩa)`)) return;
+  if (!await askConfirm(`Gỡ "${projectLabel(p)}" khỏi dashboard?\nKhông xóa file nào trên ổ đĩa.`, { title: 'Gỡ dự án', okText: 'Gỡ', danger: true })) return;
   await api('DELETE', '/api/projects', { path: p.path });
 }
 
 async function addWorktree(p) {
-  const branch = prompt(`Tên nhánh cho worktree mới trong ${projectLabel(p)} (nhánh chưa có sẽ được tạo từ HEAD):`);
+  const branch = await askText({ title: 'Worktree / nhánh mới', label: `Tên nhánh trong ${projectLabel(p)}`, placeholder: 'feat/ten-tinh-nang', hint: 'Nhánh chưa có sẽ được tạo từ HEAD. Worktree nằm cạnh thư mục repo.', okText: 'Tạo', required: true });
   if (!branch) return;
   const { path } = await api('POST', '/api/worktrees', { repo: p.path, branch: branch.trim() });
-  if (confirm(`Đã tạo worktree tại:\n${path}\n\nMở phiên Claude ở đó luôn?`)) await startSession(path);
+  if (await askConfirm(`Đã tạo worktree tại:\n${path}\n\nMở phiên Claude ở đó luôn?`, { title: 'Đã tạo worktree', okText: 'Mở phiên', cancelText: 'Để sau' })) await startSession(path);
 }
 
 function openDiffModal(title, text) {
@@ -1095,7 +1223,7 @@ async function applyMcp(s, names) {
   const msg = s.claudeSessionId
     ? 'Phiên sẽ khởi động lại và mở lại đúng cuộc trò chuyện này với bộ MCP mới. Tiếp tục?'
     : 'Phiên chưa có mã hội thoại nên sẽ mở lại từ đầu với bộ MCP mới. Tiếp tục?';
-  if (!confirm(msg)) return;
+  if (!await askConfirm(msg, { title: 'Khởi động lại phiên', okText: 'Khởi động lại' })) return;
   await api('POST', `/api/sessions/${s.id}/restart`, { mcp: names });
   state.mcpDraft = null;
   requestAnimationFrame(fitSelected);
@@ -1197,7 +1325,7 @@ async function applySkills(s, selection) {
   const msg = s.claudeSessionId
     ? 'Phiên sẽ khởi động lại và mở lại đúng cuộc trò chuyện này với bộ skill mới. Tiếp tục?'
     : 'Phiên chưa có mã hội thoại nên sẽ mở lại từ đầu với bộ skill mới. Tiếp tục?';
-  if (!confirm(msg)) return;
+  if (!await askConfirm(msg, { title: 'Khởi động lại phiên', okText: 'Khởi động lại' })) return;
   await api('POST', `/api/sessions/${s.id}/restart`, { skills: selection });
   state.skillDraft = null;
   requestAnimationFrame(fitSelected);
@@ -1451,10 +1579,12 @@ function activateTab(path) {
   requestAnimationFrame(() => { cm.refresh(); cm.focus(); });
 }
 
-function closeTab(path) {
-  const i = editor.tabs.findIndex(t => norm(t.path) === norm(path));
+async function closeTab(path) {
+  let i = editor.tabs.findIndex(t => norm(t.path) === norm(path));
   if (i === -1) return;
-  if (tabDirty(editor.tabs[i]) && !confirm(`"${editor.tabs[i].name}" có thay đổi chưa lưu. Đóng và bỏ các thay đổi?`)) return;
+  if (tabDirty(editor.tabs[i]) && !await askConfirm(`"${editor.tabs[i].name}" có thay đổi chưa lưu.`, { title: 'Đóng tab', okText: 'Đóng, bỏ thay đổi', cancelText: 'Giữ lại', danger: true })) return;
+  i = editor.tabs.findIndex(t => norm(t.path) === norm(path)); // tabs may have changed while asking
+  if (i === -1) return;
   editor.tabs.splice(i, 1);
   if (norm(editor.active || '') === norm(path)) {
     const next = editor.tabs[i] || editor.tabs[i - 1];
@@ -1482,12 +1612,21 @@ async function saveActive(force = false) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 409) {
-    if (confirm(`"${tab.name}" đã bị thay đổi trên ổ đĩa sau khi bạn mở (có thể do Claude sửa).\n\nOK: ghi đè bằng nội dung của bạn.\nCancel: không lưu.`)) return saveActive(true);
-    if (confirm('Tải lại bản trên ổ đĩa? Các thay đổi chưa lưu của bạn sẽ mất.')) await reloadTab(tab);
+    const choice = await dialog({
+      title: 'File đã bị sửa bên ngoài', iconName: 'file',
+      body: [dlgText(`"${tab.name}" đã bị thay đổi trên ổ đĩa sau khi bạn mở (có thể do Claude sửa).`)],
+      buttons: [
+        { text: 'Hủy', value: null, cancel: true, ghost: true },
+        { text: 'Tải lại bản trên ổ đĩa', value: 'reload', icon: 'resume' },
+        { text: 'Ghi đè bằng bản của tôi', value: 'overwrite', danger: true },
+      ],
+    });
+    if (choice === 'overwrite') return saveActive(true);
+    if (choice === 'reload' && await askConfirm('Các thay đổi chưa lưu của bạn sẽ mất.', { title: 'Tải lại file', okText: 'Tải lại', danger: true })) await reloadTab(tab);
     return;
   }
   if (!res.ok) {
-    alert(data.error || `Lỗi ${res.status}`);
+    showMessage(data.error || `Lỗi ${res.status}`, { title: 'Không lưu được', error: true });
     return;
   }
   tab.mtime = data.mtime;
@@ -1578,7 +1717,7 @@ function renderEditorStatus() {
     h('span', {}, tab.eol.toUpperCase()),
     h('span', {}, tab.bom ? 'UTF-8 BOM' : 'UTF-8'),
     h('span', {}, typeof mode === 'string' ? mode.replace(/^text\/x-/, '') : mode?.name || 'text'),
-    h('button', { class: 'btn small ghost', title: 'Đọc lại file từ ổ đĩa', onclick: () => (!tabDirty(tab) || confirm('Bỏ thay đổi chưa lưu và tải lại file?')) && reloadTab(tab) }, icon('resume'), 'Tải lại'));
+    h('button', { class: 'btn small ghost', title: 'Đọc lại file từ ổ đĩa', onclick: async () => { if (!tabDirty(tab) || await askConfirm('Bỏ thay đổi chưa lưu và tải lại file?', { title: 'Tải lại file', okText: 'Tải lại', danger: true })) reloadTab(tab); } }, icon('resume'), 'Tải lại'));
 }
 
 {
@@ -1672,9 +1811,9 @@ document.querySelector('.session-head .actions').onclick = async e => {
   } else if (act === 'lazygit' || act === 'explorer') {
     await api('POST', '/api/open', { cwd: s.cwd, tool: act });
   } else if (act === 'kill') {
-    if (confirm('Dừng phiên Claude này?')) await api('POST', `/api/sessions/${id}/kill`);
+    if (await askConfirm('Dừng tiến trình Claude của phiên này? Cuộc trò chuyện vẫn còn trong lịch sử.', { title: 'Dừng phiên', okText: 'Dừng', danger: true })) await api('POST', `/api/sessions/${id}/kill`);
   } else if (act === 'remove') {
-    if (s.status === 'exited' || confirm('Phiên vẫn đang chạy. Dừng và đóng nó?')) {
+    if (s.status === 'exited' || await askConfirm('Phiên vẫn đang chạy. Dừng và đóng nó?', { title: 'Đóng phiên', okText: 'Dừng và đóng', danger: true })) {
       await api('DELETE', `/api/sessions/${id}`);
       state.selected = null;
       render();

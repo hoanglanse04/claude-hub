@@ -13,6 +13,7 @@ const skills = require('./skills');
 const { ShellManager } = require('./shells');
 const { layout } = require('./graph');
 const files = require('./files');
+const { pickFolder } = require('./picker');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MODULES = path.join(__dirname, '..', 'node_modules');
@@ -138,6 +139,10 @@ function createHub({ port }) {
     if (route === 'POST /api/refresh') {
       await refreshProjects();
       return send(200, { ok: true });
+    }
+    if (route === 'POST /api/pick-folder') {
+      const initial = body.initial && fs.existsSync(body.initial) ? body.initial : '';
+      return send(200, { path: await pickFolder({ title: body.title || 'Chọn thư mục', initial }) });
     }
     if (route === 'POST /api/projects') {
       if (!body.path || !fs.existsSync(body.path)) return send(400, { error: 'Thư mục không tồn tại' });
