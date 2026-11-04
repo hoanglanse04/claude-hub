@@ -17,6 +17,7 @@ Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code*
 - **Text editor nhẹ** (CodeMirror): cây thư mục của dự án/workspace, nhiều tab, tô màu cú pháp (C#, JS/TS/JSX, JSON, HTML/XML, CSS/SCSS, SQL, Markdown, YAML, Python, PowerShell, shell…), tìm/thay thế, Ctrl+S để lưu. Giữ nguyên BOM và kiểu xuống dòng CRLF/LF; cảnh báo trước khi ghi đè file đã bị sửa bên ngoài (ví dụ Claude vừa sửa). Không có IntelliSense/debug — dùng VS Code cho việc đó.
 - **Lịch sử git dạng cây**: cây commit có màu theo nhánh (merge, tách nhánh), nhãn nhánh/tag/remote, lọc theo nội dung hoặc tác giả, bấm vào commit để xem file đổi và diff. Chỉ xem, không thao tác lên repo.
 - **Đặt tên** cho dự án, thư mục worktree và phiên; tự phân biệt hai thư mục trùng tên (ví dụ hai bản clone của cùng một repo).
+- **Popup riêng của hub** cho mọi thao tác nhập/xác nhận (đặt tên, tạo nhánh, gỡ dự án, lưu file bị sửa bên ngoài…), không dùng hộp thoại của trình duyệt. Enter để đồng ý, Esc để hủy.
 - **Cài đặt giao diện**: bộ màu có sẵn, tự chọn màu, độ vát góc, cỡ chữ, font terminal, CSS tùy chỉnh; xuất/nhập cấu hình.
 
 ## Yêu cầu
@@ -71,7 +72,7 @@ claude-hub [--port 4317] [--no-open]
 
 ## Bắt đầu sử dụng
 
-1. Bấm **Thêm dự án** và nhập đường dẫn một repo git, hoặc một thư mục chứa nhiều repo (hub quét sâu 2 cấp). Với thư mục chứa nhiều repo, hub thêm từng repo và tạo thêm một **workspace** cho chính thư mục đó: bấm **Toàn bộ workspace** để mở phiên Claude ở folder cha.
+1. Bấm **Thêm dự án**, rồi **Chọn thư mục…** để mở hộp chọn thư mục của Windows (hoặc dán đường dẫn): một repo git, hoặc một thư mục chứa nhiều repo (hub quét sâu 2 cấp). Với thư mục chứa nhiều repo, hub thêm từng repo và tạo thêm một **workspace** cho chính thư mục đó: bấm **Toàn bộ workspace** để mở phiên Claude ở folder cha.
 2. Ở sidebar, chọn một nhánh rồi bấm **▶** (hoặc **Phiên Claude mới** trong trang của nhánh).
 3. Gõ yêu cầu trong terminal như dùng Claude Code bình thường. Khi Claude cần bạn hoặc làm xong, hub đổi trạng thái, phát âm thanh và gửi thông báo (bấm **Bật thông báo** một lần để cho phép).
 4. Trang của nhánh có **Lịch sử phiên** để mở lại phiên cũ, nút **Terminal**, **lazygit** và danh sách **file đã sửa** (bấm vào để xem diff).
@@ -132,6 +133,7 @@ src/shells.js       terminal popup
 src/history.js      đọc lịch sử phiên trong ~/.claude/projects
 src/mcp.js          đọc cấu hình MCP, cấu hình riêng cho từng phiên, kiểm tra kết nối
 src/skills.js       đọc plugin/skill, settings bật/tắt skill cho từng phiên
+src/picker.js       hộp chọn thư mục của Windows (IFileOpenDialog) cho nút Thêm dự án
 src/git.js          worktree, file đã sửa, diff
 src/config.js       danh sách dự án, tên tùy đặt
 src/status.js       chuyển trạng thái từ hook event
