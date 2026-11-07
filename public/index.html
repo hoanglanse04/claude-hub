@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Claude Hub</title>
+  <title>Hoàng Lân HUB</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 1h6l4 4v6l-4 4H5l-4-4V5z' fill='%23000' stroke='%23faad14' stroke-width='1.5'/%3E%3Cpath d='M6 5.5 8 8l-2 2.5M8.5 10.5H11' fill='none' stroke='%23faad14' stroke-width='1.5'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="stylesheet" href="/vendor/cm/lib/codemirror.css">
@@ -26,6 +26,8 @@
       <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4M9 13h6M12 10v6"/></symbol>
       <symbol id="i-git" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M3 12h6M15 12h6"/></symbol>
       <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5.5 5.5"/></symbol>
+      <symbol id="i-files" viewBox="0 0 24 24"><path d="M8 3h8l4 4v11H8z"/><path d="M16 3v4h4M4 7v14h12"/></symbol>
       <symbol id="i-stop" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
       <symbol id="i-session" viewBox="0 0 24 24"><path d="m5 8 4 4-4 4M11 16h8"/></symbol>
@@ -45,7 +47,7 @@
   <header class="topbar">
     <button class="brand" id="home" title="Tổng quan">
       <svg class="ico ico-lg"><use href="#i-hub"/></svg>
-      <span id="brand-name">CLAUDE<b>//</b>HUB</span>
+      <span id="brand-name">HOÀNG LÂN<b>//</b>HUB</span>
     </button>
     <div class="counts" id="counts"></div>
     <div class="spacer"></div>
@@ -58,7 +60,7 @@
     <div class="sidebar">
       <nav class="tree" id="tree"></nav>
       <div class="sidebar-foot">
-        <button class="btn ghost" id="open-guide" title="Cách dùng Claude Hub"><svg class="ico"><use href="#i-book"/></svg>Hướng dẫn sử dụng</button>
+        <button class="btn ghost" id="open-guide" title="Cách dùng Hoàng Lân HUB"><svg class="ico"><use href="#i-book"/></svg>Hướng dẫn sử dụng</button>
       </div>
     </div>
     <main class="main">
@@ -69,11 +71,35 @@
           <svg class="ico"><use href="#i-file"/></svg>
           <span class="editor-title" id="editor-root"></span>
           <span class="spacer"></span>
+          <button class="btn small ghost" id="editor-quick" title="Tìm file theo tên (Ctrl+P)"><svg class="ico"><use href="#i-search"/></svg>Tìm file <kbd>Ctrl+P</kbd></button>
           <button class="btn small ghost" id="editor-refresh" title="Đọc lại cây thư mục"><svg class="ico"><use href="#i-resume"/></svg>Làm mới cây</button>
           <button class="btn small ghost" id="editor-close" title="Ẩn editor (các tab vẫn giữ)"><svg class="ico"><use href="#i-close"/></svg>Đóng</button>
         </div>
         <div class="editor-body">
-          <nav class="editor-tree" id="editor-tree"></nav>
+          <div class="editor-side">
+            <div class="es-tabs" role="tablist">
+              <button class="es-tab on" data-side="tree" role="tab" title="Cây thư mục (Ctrl+Shift+E)"><svg class="ico"><use href="#i-files"/></svg>Thư mục</button>
+              <button class="es-tab" data-side="search" role="tab" title="Tìm trong cả dự án (Ctrl+Shift+F)"><svg class="ico"><use href="#i-search"/></svg>Tìm kiếm</button>
+            </div>
+            <nav class="editor-tree" id="editor-tree"></nav>
+            <div class="editor-search" id="editor-search" hidden>
+              <div class="ps-form">
+                <div class="ps-row">
+                  <input class="ps-input" id="ps-query" type="text" placeholder="Tìm trong cả dự án" spellcheck="false" autocomplete="off">
+                  <button class="ps-opt" id="ps-case" title="Phân biệt hoa/thường (Alt+C)">Aa</button>
+                  <button class="ps-opt" id="ps-word" title="Khớp nguyên từ (Alt+W)"><u>ab</u></button>
+                  <button class="ps-opt" id="ps-regex" title="Biểu thức chính quy (Alt+R)">.*</button>
+                </div>
+                <button class="ps-more" id="ps-more" title="Lọc theo file">… lọc file</button>
+                <div class="ps-filters" id="ps-filters" hidden>
+                  <label>Chỉ tìm trong<input class="ps-input" id="ps-include" type="text" placeholder="ví dụ: *.cs, src/**" spellcheck="false"></label>
+                  <label>Bỏ qua<input class="ps-input" id="ps-exclude" type="text" placeholder="ví dụ: *.min.js, Migrations/**" spellcheck="false"></label>
+                </div>
+              </div>
+              <div class="ps-summary" id="ps-summary"></div>
+              <div class="ps-results" id="ps-results"></div>
+            </div>
+          </div>
           <div class="editor-main">
             <div class="editor-tabs" id="editor-tabs"></div>
             <div class="editor-cm" id="editor-cm"></div>
@@ -82,6 +108,13 @@
           </div>
         </div>
       </section>
+      <div class="qo-backdrop" id="quick-open" hidden>
+        <div class="qo">
+          <input class="qo-input" id="qo-input" type="text" placeholder="Gõ tên file để mở…" spellcheck="false" autocomplete="off">
+          <div class="qo-list" id="qo-list"></div>
+          <div class="qo-foot" id="qo-foot"></div>
+        </div>
+      </div>
       <section id="session-view" class="session-view" hidden>
         <div class="session-head">
           <div class="crumbs" id="session-crumbs"></div>
@@ -213,8 +246,11 @@
           <section id="g-editor">
             <h2>Text editor</h2>
             <ul>
-              <li>Nút <b>Tệp</b> mở cây thư mục của dự án/workspace; bấm file để mở thành tab.</li>
-              <li><kbd>Ctrl</kbd>+<kbd>S</kbd> lưu, <kbd>Ctrl</kbd>+<kbd>F</kbd> tìm, <kbd>Shift</kbd>+<kbd>Ctrl</kbd>+<kbd>F</kbd> thay thế, <kbd>Alt</kbd>+<kbd>G</kbd> nhảy tới dòng, <kbd>Ctrl</kbd>+<kbd>/</kbd> comment.</li>
+              <li>Nút <b>Tệp</b> mở cây thư mục của dự án/workspace; bấm file để mở thành tab. Chuyển tab nào thì cây thư mục tự mở tới và chọn file đó.</li>
+              <li><kbd>Ctrl</kbd>+<kbd>P</kbd>: tìm file theo tên (gõ vài chữ cái là đủ, ví dụ <code>patsvc</code> ra <code>PatientService.cs</code>; thêm <code>:120</code> để nhảy tới dòng 120). Danh sách bỏ qua file trong <code>.gitignore</code>.</li>
+              <li><kbd>Ctrl</kbd>+<kbd>F</kbd>: tìm trong file đang mở (Enter / <kbd>Shift</kbd>+Enter để đi tới / lui), <kbd>Ctrl</kbd>+<kbd>H</kbd>: thay thế.</li>
+              <li><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>: tìm trong cả dự án/workspace, có tùy chọn hoa/thường, nguyên từ, biểu thức chính quy và lọc file (<code>*.cs</code>, <code>src/**</code>). Bấm kết quả để mở đúng dòng. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> quay lại cây thư mục.</li>
+              <li><kbd>Ctrl</kbd>+<kbd>S</kbd> lưu, <kbd>Alt</kbd>+<kbd>G</kbd> nhảy tới dòng, <kbd>Ctrl</kbd>+<kbd>/</kbd> comment.</li>
               <li>Nếu file vừa bị sửa bên ngoài (ví dụ Claude vừa sửa), hub hỏi trước khi ghi đè.</li>
               <li>Editor nhẹ, không có IntelliSense/debug; việc đó vẫn dùng VS Code.</li>
             </ul>
@@ -245,7 +281,7 @@
               <li><b>MCP báo lỗi</b>: thường do dịch vụ phía sau (ví dụ database) chưa chạy, hoặc cấu hình trong <code>~/.claude.json</code> sai.</li>
             </ul>
           </section>
-          <p class="guide-credit">Claude Hub v0.5.2 · Tác giả: <b>Hoàng Lân Dev</b></p>
+          <p class="guide-credit">Hoàng Lân HUB v0.6.0 · Tác giả: <b>Hoàng Lân Dev</b></p>
         </article>
       </div>
     </div>

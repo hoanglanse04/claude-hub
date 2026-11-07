@@ -13,6 +13,7 @@ const skills = require('./skills');
 const { ShellManager } = require('./shells');
 const { layout } = require('./graph');
 const files = require('./files');
+const search = require('./search');
 const { pickFolder } = require('./picker');
 const clipboard = require('./clipboard');
 
@@ -188,6 +189,21 @@ function createHub({ port }) {
     if (route === 'GET /api/fs/list') {
       const dir = files.resolveSafe(url.searchParams.get('path'), fileRoots());
       return send(200, { path: dir, entries: files.list(dir) });
+    }
+    if (route === 'GET /api/fs/files') {
+      const dir = files.resolveSafe(url.searchParams.get('root'), fileRoots());
+      return send(200, { root: dir, ...await search.listFiles(dir) });
+    }
+    if (route === 'POST /api/fs/search') {
+      const dir = files.resolveSafe(body.root, fileRoots());
+      const query = String(body.query || '');
+      if (body.regex) {
+        try { search.buildMatcher(query, body); } catch (err) { return send(400, { error: `Biểu thức chính quy không hợp lệ: ${err.message}` }); }
+      }
+      return send(200, { root: dir, ...await search.searchText(dir, query, {
+        regex: !!body.regex, caseSensitive: !!body.caseSensitive, wholeWord: !!body.wholeWord,
+        include: body.include, exclude: body.exclude,
+      }) });
     }
     if (route === 'GET /api/fs/read') {
       const file = files.resolveSafe(url.searchParams.get('path'), fileRoots());

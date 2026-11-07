@@ -1,4 +1,4 @@
-# Claude Hub
+# Hoàng Lân HUB (claude-hub)
 
 Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code** cùng lúc, sắp theo dự án, nhánh git và worktree. Mỗi phiên là một terminal thật nhúng trong trình duyệt; hub cho biết phiên nào đang chạy, phiên nào đang chờ bạn trả lời, phiên nào đã xong, và báo bằng âm thanh hoặc thông báo của hệ điều hành.
 
@@ -16,7 +16,7 @@ Dashboard chạy trên máy bạn để quản lý nhiều phiên **Claude Code*
 - **Phím sao chép/dán** như Windows Terminal: bôi đen rồi Ctrl+C để sao chép (không bôi đen thì Ctrl+C vẫn là ngắt), Ctrl+Shift+C luôn sao chép, Ctrl+V / Ctrl+Shift+V / Shift+Insert để dán.
 - **Terminal popup**: mở PowerShell, cmd hoặc Git Bash ngay tại thư mục của nhánh/phiên; nhiều tab, kéo thả, đổi kích thước, thu nhỏ.
 - **Git**: tạo worktree/nhánh mới, xem file đã sửa và diff từng file, mở lazygit hoặc thư mục.
-- **Text editor nhẹ** (CodeMirror): cây thư mục của dự án/workspace, nhiều tab, tô màu cú pháp (C#, JS/TS/JSX, JSON, HTML/XML, CSS/SCSS, SQL, Markdown, YAML, Python, PowerShell, shell…), tìm/thay thế, Ctrl+S để lưu. Giữ nguyên BOM và kiểu xuống dòng CRLF/LF; cảnh báo trước khi ghi đè file đã bị sửa bên ngoài (ví dụ Claude vừa sửa). Không có IntelliSense/debug — dùng VS Code cho việc đó.
+- **Text editor nhẹ** (CodeMirror): phím tắt như VS Code: **Ctrl+P** tìm file theo tên (gõ tắt kiểu `patsvc`, thêm `:120` để nhảy dòng), **Ctrl+F** tìm trong file, **Ctrl+H** thay thế, **Ctrl+Shift+F** tìm trong cả dự án/workspace (hoa/thường, nguyên từ, regex, lọc `*.cs`; bỏ qua file trong `.gitignore`, gồm cả repo con). Chuyển tab thì cây thư mục tự mở tới file đó. Nhiều tab, tô màu cú pháp (C#, JS/TS/JSX, JSON, HTML/XML, CSS/SCSS, SQL, Markdown, YAML, Python, PowerShell, shell…), Ctrl+S để lưu. Giữ nguyên BOM và kiểu xuống dòng CRLF/LF; cảnh báo trước khi ghi đè file đã bị sửa bên ngoài (ví dụ Claude vừa sửa). Không có IntelliSense/debug — dùng VS Code cho việc đó.
 - **Lịch sử git dạng cây**: cây commit có màu theo nhánh (merge, tách nhánh), nhãn nhánh/tag/remote, lọc theo nội dung hoặc tác giả, bấm vào commit để xem file đổi và diff. Chỉ xem, không thao tác lên repo.
 - **Đặt tên** cho dự án, thư mục worktree và phiên; tự phân biệt hai thư mục trùng tên (ví dụ hai bản clone của cùng một repo).
 - **Popup riêng của hub** cho mọi thao tác nhập/xác nhận (đặt tên, tạo nhánh, gỡ dự án, lưu file bị sửa bên ngoài…), không dùng hộp thoại của trình duyệt. Enter để đồng ý, Esc để hủy.

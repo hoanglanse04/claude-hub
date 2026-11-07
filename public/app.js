@@ -97,7 +97,7 @@ function applySettings() {
   document.body.classList.toggle('no-anim', !settings.anim);
   const brand = document.getElementById('brand-name');
   if (settings.brand) brand.textContent = settings.brand;
-  else brand.replaceChildren('CLAUDE', h('b', {}, '//'), 'HUB');
+  else brand.replaceChildren('HOÀNG LÂN', h('b', {}, '//'), 'HUB');
   document.getElementById('user-css').textContent = settings.css;
   // only Claude panes follow the setting; changing it re-allocates the buffer, so skip when unchanged
   for (const t of terms.values()) if (t.term.options.scrollback !== scrollbackLines()) t.term.options.scrollback = scrollbackLines();
@@ -184,7 +184,7 @@ function renderSettings() {
           'Bộ nhớ cuộn chỉ tốn RAM theo số dòng thật sự in ra, khoảng 1,5 KB mỗi dòng (10.000 dòng ≈ 15 MB).')),
       group('Hành vi', toggle('sound', 'Âm thanh khi phiên xong / chờ bạn'), toggle('anim', 'Hiệu ứng nhấp nháy'),
         h('div', { class: 'set-row' }, h('label', {}, 'Tên hiển thị'),
-          h('input', { type: 'text', class: 'wide', value: settings.brand, placeholder: 'CLAUDE//HUB', oninput: e => setSetting('brand', e.target.value) }))),
+          h('input', { type: 'text', class: 'wide', value: settings.brand, placeholder: 'HOÀNG LÂN//HUB', oninput: e => setSetting('brand', e.target.value) }))),
       group('CSS tùy chỉnh', css, h('p', { class: 'set-hint' }, 'Áp dụng ngay sau mỗi lần gõ. Dùng các biến như var(--accent), var(--bg), var(--cut) để đồng bộ với bộ màu.'))),
     h('div', { class: 'settings-foot' },
       h('button', { class: 'btn small', title: 'Sao chép cấu hình dạng JSON', onclick: exportSettings }, icon('download'), 'Xuất'),
@@ -1026,7 +1026,7 @@ function renderCounts() {
   }
   document.getElementById('counts').replaceChildren(...chips);
   const unread = state.sessions.filter(s => s.unread).length;
-  document.title = unread ? `(${unread}) Claude Hub` : 'Claude Hub';
+  document.title = unread ? `(${unread}) Hoàng Lân HUB` : 'Hoàng Lân HUB';
 }
 
 function sessionRow(s, label, sel) {
@@ -1531,6 +1531,7 @@ const editor = {
   tabs: [], // { path, name, doc, mtime, bom, eol, cleanGen }
   active: null, // path
   cm: null,
+  side: 'tree', // left panel: 'tree' | 'search'
 };
 
 const MODES = {
@@ -1564,6 +1565,11 @@ function ensureCm() {
       'Ctrl-/': 'toggleComment',
       'Cmd-/': 'toggleComment',
       'Alt-G': 'jumpToLine',
+      'Ctrl-F': 'findPersistent',
+      'Cmd-F': 'findPersistent',
+      'Ctrl-H': 'replace',
+      'Shift-Ctrl-F': () => showProjectSearch(),
+      'Ctrl-P': () => quickOpen(),
     },
   });
   editor.cm.on('change', () => renderEditorTabs());
@@ -1574,6 +1580,8 @@ function ensureCm() {
 async function openEditor(root, file) {
   if (editor.root && norm(editor.root) !== norm(root)) {
     editor.expanded.clear();
+    Object.assign(ps, { data: null, error: null, picked: null });
+    renderSearch();
   }
   editor.root = root;
   editor.open = true;
@@ -1582,16 +1590,9 @@ async function openEditor(root, file) {
   ensureCm();
   renderEditor();
   loadDir(root);
-  if (file) {
-    // reveal the file's folders in the tree
-    let dir = file.replace(/[\\/][^\\/]+$/, '');
-    while (isInside(dir, root) && norm(dir) !== norm(root)) {
-      editor.expanded.set(norm(dir), dir);
-      loadDir(dir);
-      dir = dir.replace(/[\\/][^\\/]+$/, '');
-    }
-    await openFile(file);
-  }
+  loadFileIndex().catch(() => {});
+  if (file) await openFile(file);
+  else if (editor.active && isInside(editor.active, root)) revealInTree(editor.active);
   requestAnimationFrame(() => editor.cm.refresh());
 }
 
@@ -1614,9 +1615,10 @@ async function loadDir(dir, force = false) {
   renderEditorTree();
 }
 
-async function openFile(path) {
+// at: { line (1-based), col, len } to put the cursor on / select after opening
+async function openFile(path, at = null) {
   const existing = editor.tabs.find(t => norm(t.path) === norm(path));
-  if (existing) return activateTab(existing.path);
+  if (existing) return activateTab(existing.path, at);
   let data;
   try {
     data = await api('GET', `/api/fs/read?path=${encodeURIComponent(path)}`);
@@ -1626,10 +1628,10 @@ async function openFile(path) {
   const doc = CodeMirror.Doc(data.text, modeFor(path));
   const tab = { path: data.path, name: basename(data.path), doc, mtime: data.mtime, bom: data.bom, eol: data.eol, cleanGen: doc.changeGeneration() };
   editor.tabs.push(tab);
-  activateTab(tab.path);
+  activateTab(tab.path, at);
 }
 
-function activateTab(path) {
+function activateTab(path, at = null) {
   const tab = editor.tabs.find(t => norm(t.path) === norm(path));
   if (!tab) return;
   editor.active = tab.path;
@@ -1637,8 +1639,35 @@ function activateTab(path) {
   if (cm.getDoc() !== tab.doc) cm.swapDoc(tab.doc);
   cm.setOption('indentUnit', twoSpace(tab.path) ? 2 : 4);
   cm.setOption('tabSize', twoSpace(tab.path) ? 2 : 4);
+  if (at?.line) {
+    const line = Math.min(Math.max(at.line - 1, 0), tab.doc.lastLine());
+    const from = { line, ch: at.col || 0 };
+    tab.doc.setSelection(from, { line, ch: (at.col || 0) + (at.len || 0) });
+  }
   renderEditor();
-  requestAnimationFrame(() => { cm.refresh(); cm.focus(); });
+  revealInTree(tab.path);
+  requestAnimationFrame(() => {
+    cm.refresh();
+    if (at?.line) cm.scrollIntoView({ from: cm.getCursor('from'), to: cm.getCursor('to') }, Math.round(cm.getScrollInfo().clientHeight / 3));
+    cm.focus();
+  });
+}
+
+// Expands the folders down to path and scrolls the tree so its row is visible (like VS Code's auto reveal).
+async function revealInTree(path) {
+  const root = editor.root;
+  if (!root || !isInside(path, root)) return;
+  const dirs = [];
+  let dir = path.replace(/[\\/][^\\/]+$/, '');
+  while (isInside(dir, root) && norm(dir) !== norm(root)) {
+    dirs.unshift(dir);
+    dir = dir.replace(/[\\/][^\\/]+$/, '');
+  }
+  for (const d of dirs) editor.expanded.set(norm(d), d);
+  await Promise.all(dirs.map(d => loadDir(d)));
+  if (norm(editor.active || '') !== norm(path)) return; // user moved on meanwhile
+  renderEditorTree();
+  document.querySelector('#editor-tree .et-row.on')?.scrollIntoView({ block: 'nearest' });
 }
 
 async function closeTab(path) {
@@ -1794,6 +1823,292 @@ function renderEditorStatus() {
     if (editor.tabs.some(tabDirty)) { e.preventDefault(); e.returnValue = ''; }
   });
 }
+
+// ---------- editor: find a file by name (Ctrl+P) ----------
+const fileIndex = { root: null, files: [], at: 0, loading: null, truncated: false };
+
+async function loadFileIndex(force = false) {
+  const root = editor.root;
+  if (!force && fileIndex.root && norm(fileIndex.root) === norm(root) && Date.now() - fileIndex.at < 30000) return;
+  if (fileIndex.loading && norm(fileIndex.loading.root) === norm(root)) return fileIndex.loading.promise;
+  const promise = (async () => {
+    try {
+      const data = await api('GET', `/api/fs/files?root=${encodeURIComponent(root)}`);
+      Object.assign(fileIndex, { root, files: data.files, truncated: data.truncated, at: Date.now() });
+    } finally {
+      fileIndex.loading = null;
+    }
+  })();
+  fileIndex.loading = { root, promise };
+  return promise;
+}
+
+// Scores how well the letters of q appear, in order, inside s (VS Code-like fuzzy match).
+// Returns { score, pos } or null. Start of words, CamelCase humps and runs score higher.
+// Picks the best placement (not just the first one), so "patsvc" lands on Pat-S-erv-C... of
+// PatientService rather than on scattered letters.
+function fuzzyMatch(q, s) {
+  const n = s.length, m = q.length;
+  if (!m || m > n) return null;
+  const sl = s.toLowerCase();
+  // quick reject: are all letters there, in order?
+  for (let i = 0, k = 0; k < m; i++) {
+    if (i >= n) return null;
+    if (sl[i] === q[k]) k++;
+  }
+  const start = i => i === 0 || /[\\/._\- ]/.test(s[i - 1]) || (/[A-Z]/.test(s[i]) && /[a-z0-9]/.test(s[i - 1]));
+  const NEG = -1e9;
+  // best[k][i]: best score with q[k] matched at s[i]; from[k][i]: where q[k-1] was matched
+  const best = [], from = [];
+  for (let k = 0; k < m; k++) {
+    const row = new Array(n).fill(NEG), back = new Array(n).fill(-1);
+    let runMax = NEG, runAt = -1; // best of row k-1 over positions < i-1
+    for (let i = k; i < n; i++) {
+      if (k > 0 && i >= 2 && best[k - 1][i - 2] > runMax) { runMax = best[k - 1][i - 2]; runAt = i - 2; }
+      if (sl[i] !== q[k]) continue;
+      const bonus = 1 + (start(i) ? 8 : 0);
+      if (k === 0) { row[i] = bonus + (i === 0 ? 4 : 0) - Math.min(i, 10) * 0.1; continue; }
+      const glued = best[k - 1][i - 1] > NEG ? best[k - 1][i - 1] + 5 : NEG;
+      if (glued >= runMax && glued > NEG) { row[i] = glued + bonus; back[i] = i - 1; }
+      else if (runMax > NEG) { row[i] = runMax + bonus; back[i] = runAt; }
+    }
+    best.push(row);
+    from.push(back);
+  }
+  let end = -1;
+  for (let i = 0; i < n; i++) if (best[m - 1][i] > NEG && (end === -1 || best[m - 1][i] > best[m - 1][end])) end = i;
+  if (end === -1) return null;
+  const pos = new Array(m);
+  for (let k = m - 1, i = end; k >= 0; k--) { pos[k] = i; i = from[k][i]; }
+  return { score: best[m - 1][end], pos };
+}
+
+function rankFiles(query, files, limit = 60) {
+  const q = query.toLowerCase().replace(/\s+/g, '').replace(/\\/g, '/');
+  if (!q) return [];
+  const out = [];
+  for (const rel of files) {
+    const cut = rel.lastIndexOf('/') + 1;
+    const name = rel.slice(cut);
+    const onName = q.includes('/') ? null : fuzzyMatch(q, name);
+    let score, pos;
+    if (onName) {
+      score = onName.score * 3 - name.length * 0.3 + (name.toLowerCase().startsWith(q) ? 50 : 0) + (name.toLowerCase() === q ? 100 : 0);
+      pos = onName.pos.map(p => p + cut);
+    } else {
+      const onPath = fuzzyMatch(q, rel);
+      if (!onPath) continue;
+      ({ score, pos } = onPath);
+    }
+    out.push({ rel, score: score - rel.length / 100, pos });
+  }
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, limit);
+}
+
+const quick = { items: [], index: 0, line: null };
+const qoEl = document.getElementById('quick-open');
+const qoInput = document.getElementById('qo-input');
+
+async function quickOpen() {
+  if (!editor.open) return;
+  qoEl.hidden = false;
+  qoInput.value = '';
+  qoInput.focus();
+  renderQuickOpen();
+  try { await loadFileIndex(); } catch { /* api() showed the error */ }
+  if (!qoEl.hidden) renderQuickOpen();
+}
+
+function closeQuickOpen(refocus = true) {
+  qoEl.hidden = true;
+  if (refocus && editor.active) editor.cm?.focus();
+}
+
+function renderQuickOpen() {
+  const raw = qoInput.value.trim();
+  const m = /^(.*?):(\d+)$/.exec(raw);
+  const query = m ? m[1] : raw;
+  quick.line = m ? Number(m[2]) : null;
+  const root = editor.root;
+  const ready = fileIndex.root && norm(fileIndex.root) === norm(root);
+  if (!query) {
+    // nothing typed yet: the open tabs, most recent first
+    quick.items = editor.tabs.slice().reverse().map(t => ({ full: t.path, rel: isInside(t.path, root) ? t.path.slice(root.replace(/[\\/]+$/, '').length + 1).replace(/\\/g, '/') : t.path, pos: [] }));
+  } else {
+    quick.items = ready ? rankFiles(query, fileIndex.files).map(r => ({ ...r, full: joinPath(root, r.rel.replace(/\//g, '\\')) })) : [];
+  }
+  quick.index = Math.min(quick.index, Math.max(quick.items.length - 1, 0));
+  if (raw !== quick.lastRaw) quick.index = 0;
+  quick.lastRaw = raw;
+  const list = document.getElementById('qo-list');
+  const marked = (text, start, pos) => {
+    const set = new Set(pos.map(p => p - start).filter(p => p >= 0 && p < text.length));
+    const parts = [];
+    for (let i = 0; i < text.length; i++) parts.push(set.has(i) ? h('b', {}, text[i]) : text[i]);
+    return parts;
+  };
+  fill(list, quick.items.length
+    ? quick.items.map((it, i) => {
+      const cut = it.rel.lastIndexOf('/') + 1;
+      return h('div', {
+        class: `qo-item${i === quick.index ? ' on' : ''}`, title: it.full,
+        onmousedown: e => { e.preventDefault(); quick.index = i; pickQuick(); },
+      }, icon('file'), h('span', { class: 'qi-name' }, marked(it.rel.slice(cut), cut, it.pos)), h('span', { class: 'qi-dir' }, cut ? marked(it.rel.slice(0, cut - 1), 0, it.pos) : ''));
+    })
+    : h('div', { class: 'qo-empty' }, !ready && query ? 'Đang đọc danh sách file…' : query ? 'Không có file nào khớp.' : 'Gõ tên file. Thêm :số để nhảy tới dòng, ví dụ PatientService.cs:120'));
+  list.querySelector('.qo-item.on')?.scrollIntoView({ block: 'nearest' });
+  document.getElementById('qo-foot').textContent = ready
+    ? `${fileIndex.files.length.toLocaleString('vi-VN')} file${fileIndex.truncated ? ' (đã cắt bớt)' : ''} · ↑↓ chọn · Enter mở · Esc đóng`
+    : 'Đang đọc danh sách file…';
+}
+
+function pickQuick() {
+  const it = quick.items[quick.index];
+  if (!it) return;
+  const line = quick.line;
+  closeQuickOpen(false);
+  openFile(it.full, line ? { line } : null);
+}
+
+qoInput.addEventListener('input', renderQuickOpen);
+qoInput.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeQuickOpen(); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!quick.items.length) return;
+    quick.index = (quick.index + (e.key === 'ArrowDown' ? 1 : -1) + quick.items.length) % quick.items.length;
+    renderQuickOpen();
+  } else if (e.key === 'Enter') { e.preventDefault(); pickQuick(); }
+});
+qoEl.addEventListener('mousedown', e => { if (e.target === qoEl) closeQuickOpen(); });
+document.getElementById('editor-quick').onclick = quickOpen;
+
+// ---------- editor: search the whole project (Ctrl+Shift+F) ----------
+const ps = { query: '', caseSensitive: false, wholeWord: false, regex: false, include: '', exclude: '', data: null, error: null, running: false, seq: 0, collapsed: new Set(), timer: null, root: null, picked: null };
+const psEl = id => document.getElementById(id);
+
+function setSide(side) {
+  editor.side = side;
+  for (const b of document.querySelectorAll('.es-tab')) b.classList.toggle('on', b.dataset.side === side);
+  psEl('editor-tree').hidden = side !== 'tree';
+  psEl('editor-search').hidden = side !== 'search';
+  if (side === 'tree' && editor.active) revealInTree(editor.active);
+}
+
+function showProjectSearch() {
+  if (!editor.open) return;
+  setSide('search');
+  const sel = editor.active ? editor.cm.getSelection() : '';
+  const input = psEl('ps-query');
+  if (sel && !sel.includes('\n') && sel.length < 200) {
+    input.value = sel;
+    scheduleSearch(0);
+  }
+  input.focus();
+  input.select();
+}
+
+function scheduleSearch(delay = 350) {
+  clearTimeout(ps.timer);
+  ps.timer = setTimeout(runSearch, delay);
+}
+
+async function runSearch() {
+  ps.query = psEl('ps-query').value;
+  ps.include = psEl('ps-include').value;
+  ps.exclude = psEl('ps-exclude').value;
+  const seq = ++ps.seq;
+  if (!ps.query) {
+    Object.assign(ps, { data: null, error: null, running: false });
+    return renderSearch();
+  }
+  ps.running = true;
+  renderSearch();
+  const res = await fetch('/api/fs/search', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hub-token': window.HUB_TOKEN },
+    body: JSON.stringify({ root: editor.root, query: ps.query, caseSensitive: ps.caseSensitive, wholeWord: ps.wholeWord, regex: ps.regex, include: ps.include, exclude: ps.exclude }),
+  }).catch(err => ({ ok: false, json: async () => ({ error: err.message }) }));
+  const data = await res.json().catch(() => ({}));
+  if (seq !== ps.seq) return; // a newer search started meanwhile
+  ps.running = false;
+  ps.root = editor.root;
+  ps.collapsed.clear();
+  if (res.ok) Object.assign(ps, { data, error: null });
+  else Object.assign(ps, { data: null, error: data.error || `Lỗi ${res.status}` });
+  renderSearch();
+}
+
+// keep the match in view in the narrow panel: only a little of what comes before it
+const before = text => {
+  const t = text.trimStart();
+  return t.length > 14 ? `…${t.slice(-14)}` : t;
+};
+
+function renderSearch() {
+  for (const [id, key] of [['ps-case', 'caseSensitive'], ['ps-word', 'wholeWord'], ['ps-regex', 'regex']]) psEl(id).classList.toggle('on', ps[key]);
+  const sum = psEl('ps-summary');
+  sum.classList.toggle('err', !!ps.error);
+  const d = ps.data;
+  sum.textContent = ps.running ? 'Đang tìm…'
+    : ps.error ? ps.error
+    : !d ? ''
+    : d.matches ? `${d.matches.toLocaleString('vi-VN')} kết quả trong ${d.files.toLocaleString('vi-VN')} file${d.truncated ? ' (dừng ở 2.000 kết quả đầu, hãy tìm cụ thể hơn)' : ''}`
+    : 'Không tìm thấy kết quả nào.';
+  if (!d || ps.running) return psEl('ps-results').replaceChildren();
+  const root = ps.root;
+  fill(psEl('ps-results'), d.results.map(r => {
+    const full = joinPath(root, r.file.replace(/\//g, '\\'));
+    const cut = r.file.lastIndexOf('/') + 1;
+    const closed = ps.collapsed.has(r.file);
+    const head = h('div', {
+      class: 'ps-file', title: full,
+      onclick: () => { if (closed) ps.collapsed.delete(r.file); else ps.collapsed.add(r.file); renderSearch(); },
+    }, h('span', { class: 'et-caret' }, closed ? '▸' : '▾'), icon('file'), h('span', { class: 'pf-name' }, r.file.slice(cut)), h('span', { class: 'pf-dir' }, r.file.slice(0, Math.max(cut - 1, 0))), h('span', { class: 'pf-count' }, r.hits.length));
+    if (closed) return head;
+    return [head, r.hits.map(hit => {
+      const a = hit.col - hit.offset;
+      const key = `${r.file}:${hit.line}:${hit.col}`;
+      return h('div', {
+        class: `ps-hit${ps.picked === key ? ' on' : ''}`, title: `${r.file}:${hit.line}`,
+        onclick: () => { ps.picked = key; renderSearch(); openFile(full, { line: hit.line, col: hit.col, len: hit.len }); },
+      }, h('span', { class: 'ph-line' }, hit.line), h('span', { class: 'ph-text' }, before(hit.text.slice(0, a)), h('mark', {}, hit.text.slice(a, a + hit.len)), hit.text.slice(a + hit.len)));
+    })];
+  }));
+}
+
+{
+  for (const b of document.querySelectorAll('.es-tab')) b.onclick = () => (b.dataset.side === 'search' ? showProjectSearch() : setSide('tree'));
+  const input = psEl('ps-query');
+  input.addEventListener('input', () => scheduleSearch());
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); scheduleSearch(0); } });
+  for (const id of ['ps-include', 'ps-exclude']) {
+    psEl(id).addEventListener('input', () => scheduleSearch(500));
+    psEl(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); scheduleSearch(0); } });
+  }
+  const toggles = { 'ps-case': 'caseSensitive', 'ps-word': 'wholeWord', 'ps-regex': 'regex' };
+  for (const [id, key] of Object.entries(toggles)) psEl(id).onclick = () => { ps[key] = !ps[key]; renderSearch(); scheduleSearch(0); };
+  psEl('editor-search').addEventListener('keydown', e => {
+    const key = { c: 'caseSensitive', w: 'wholeWord', r: 'regex' }[e.key.toLowerCase()];
+    if (e.altKey && key) { e.preventDefault(); ps[key] = !ps[key]; renderSearch(); scheduleSearch(0); }
+  });
+  psEl('ps-more').onclick = () => { psEl('ps-filters').hidden = !psEl('ps-filters').hidden; };
+}
+
+// VS Code shortcuts while the editor is open. Capture phase, so they win over CodeMirror and the browser.
+document.addEventListener('keydown', e => {
+  if (!editor.open || dialogStack.length || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  const take = fn => { e.preventDefault(); e.stopPropagation(); fn(); };
+  if (k === 'p' && !e.shiftKey) take(quickOpen);
+  else if (k === 'f' && e.shiftKey) take(() => { closeQuickOpen(false); showProjectSearch(); });
+  else if (k === 'e' && e.shiftKey) take(() => setSide('tree'));
+  else if ((k === 'f' || k === 'h') && !e.shiftKey && editor.active && !e.target.closest?.('.CodeMirror')) {
+    // Ctrl+F outside the text (tree, search box…) still searches the open file, not the page
+    take(() => { editor.cm.focus(); editor.cm.execCommand(k === 'f' ? 'findPersistent' : 'replace'); });
+  }
+}, true);
 
 // ---------- wiring ----------
 document.getElementById('home').onclick = () => { closeEditor(); state.selected = null; render(); };

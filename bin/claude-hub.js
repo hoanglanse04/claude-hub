@@ -42,7 +42,7 @@ hub.server.on('error', err => {
   throw err;
 });
 hub.server.listen(port, '127.0.0.1', () => {
-  console.log(`Claude Hub đang chạy: ${url}`);
+  console.log(`Hoàng Lân HUB đang chạy: ${url}`);
   console.log('Giữ cửa sổ này mở. Đóng nó (hoặc Ctrl+C) sẽ dừng mọi phiên Claude trong hub.');
   openWindow();
 });
