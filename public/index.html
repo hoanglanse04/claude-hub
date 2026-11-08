@@ -28,6 +28,7 @@
       <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5.5 5.5"/></symbol>
       <symbol id="i-files" viewBox="0 0 24 24"><path d="M8 3h8l4 4v11H8z"/><path d="M16 3v4h4M4 7v14h12"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M3 11 21 3l-8 18-2-8z"/><path d="m11 13 10-10"/></symbol>
       <symbol id="i-stop" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
       <symbol id="i-session" viewBox="0 0 24 24"><path d="m5 8 4 4-4 4M11 16h8"/></symbol>
@@ -131,7 +132,7 @@
           </div>
         </div>
         <div class="session-body">
-          <div class="terminals" id="terminals"></div>
+          <div class="terminals" id="terminals"><button class="term-send" id="term-send" title="Gửi prompt (giống bấm Enter)"><svg class="ico"><use href="#i-send"/></svg></button></div>
           <aside class="files" id="files" hidden></aside>
           <aside class="files mcp-panel" id="mcp-panel" hidden></aside>
           <aside class="files mcp-panel" id="skill-panel" hidden></aside>

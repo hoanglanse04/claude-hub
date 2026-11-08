@@ -617,6 +617,15 @@ function fitSelected() {
 }
 window.addEventListener('resize', fitSelected);
 
+// Paper-plane button: submits what is typed in Claude's prompt, same as pressing Enter.
+document.getElementById('term-send').addEventListener('mousedown', e => e.preventDefault()); // keep terminal focus
+document.getElementById('term-send').addEventListener('click', () => {
+  if (state.selected?.kind !== 'session') return;
+  const id = state.selected.id;
+  send({ type: 'input', id, data: '\r' });
+  terms.get(id)?.term.focus();
+});
+
 // ---------- popup terminal (plain shell, not Claude) ----------
 const shellTerms = new Map(); // shell id -> { term, fit, el }
 const pop = { open: false, active: null, max: false, cwd: null, kind: null }; // kind: last pick in the popup dropdown
